@@ -1,0 +1,20 @@
+{
+  "name": "cert.one-backend",
+  "version": "1.0.0",
+  "description": "Dynamic PDF certificate generator using Handlebars and Puppeteer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "express": "^4.18.2",
+    "handlebars": "^4.7.8",
+    "puppeteer": "^21.3.8"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "author": "JOHNJOHNFM, LLC",
+  "license": "MIT"
+}

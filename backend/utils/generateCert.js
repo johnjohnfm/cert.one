@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Cert template must be placed in backend/templates/
-const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'CERTONE.pdf');
+const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'CERTONEv2.pdf');
 
 async function generateCert({
   userName,

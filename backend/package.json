@@ -1,13 +1,19 @@
 {
-  "name": "cert-one-backend",
+  "name": "cert-one",
   "version": "1.0.0",
+  "description": "CERT.ONE Blockchain Certification Microservice",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "pdf-lib": "^1.17.1"
-  }
+    "body-parser": "^1.20.1",
+    "pdf-lib": "^1.18.0"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "author": "JOHNJOHNFM, LLC",
+  "license": "MIT"
 }

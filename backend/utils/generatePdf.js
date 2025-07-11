@@ -1,15 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
-const puppeteer = require('puppeteer');
+const chromium = require('chrome-aws-lambda'); // uses Render-friendly Chrome
 
 async function generatePdf(data) {
   const templatePath = path.join(__dirname, '..', 'templates', 'cert.hbs');
   const templateHtml = fs.readFileSync(templatePath, 'utf8');
-  const compileTemplate = handlebars.compile(templateHtml);
-  const html = compileTemplate(data);
+  const compile = handlebars.compile(templateHtml);
+  const html = compile(data);
 
-  const browser = await puppeteer.launch();
+  const browser = await chromium.puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath,
+    headless: chromium.headless
+  });
+
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
   const pdfBuffer = await page.pdf({ format: 'A4' });

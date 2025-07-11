@@ -1,9 +1,9 @@
-// generateCert.js
+// backend/generateCert.js
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
 
-// Updated template path for v2_flat
+// Cert template must be placed in backend/templates/
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'CERTONEv2_flat.pdf');
 
 async function generateCert({
@@ -27,13 +27,7 @@ async function generateCert({
   const monoFont = await pdfDoc.embedFont(StandardFonts.Courier);
 
   const draw = (text, x, y, font = monoFont, size = 8) => {
-    page.drawText(text || '-', {
-      x,
-      y,
-      size,
-      font,
-      color: rgb(0, 0, 0)
-    });
+    page.drawText(text || '-', { x, y, size, font, color: rgb(0, 0, 0) });
   };
 
   // Helper: wrap long strings (e.g. hashes, URLs)
@@ -51,26 +45,26 @@ async function generateCert({
   const step = 16;
 
   // USER INFO
-  draw(userName,   x, y); y -= step;
-  draw(email,      x, y); y -= step;
-  draw(title,      x, y); y -= step;
-  draw(fileName,   x, y); y -= step;
+  draw(userName, x, y); y -= step;
+  draw(email,    x, y); y -= step;
+  draw(title,    x, y); y -= step;
+  draw(fileName, x, y); y -= step;
   draw(merkleRoot, x, y); y -= step;
 
-  // ASSET INFO — includes wrapped fields
+  // ASSET INFO — wrapped fields
   wrapText(certificateId).forEach((line, i) => draw(line, x, y - (i * step)));
   y -= step * (wrapText(certificateId).length || 1);
 
   wrapText(fileHash).forEach((line, i) => draw(line, x, y - (i * step)));
   y -= step * (wrapText(fileHash).length || 1);
 
-  draw(timestamp,   x, y); y -= step;
-  draw(blockchain,  x, y); y -= step;
-
+  draw(timestamp,  x, y); y -= step;
+  draw(blockchain, x, y); y -= step;
   wrapText(verificationLink).forEach((line, i) => draw(line, x, y - (i * step)));
 
-  const pdfBytes = await pdfDoc.save();
-  return pdfBytes;
+  // Save and return a Node Buffer
+  const uint8 = await pdfDoc.save();
+  return Buffer.from(uint8);
 }
 
 module.exports = generateCert;

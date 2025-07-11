@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
-const chromium = require('chrome-aws-lambda'); // uses Render-friendly Chrome
+const chromium = require('chrome-aws-lambda');
 
 async function generatePdf(data) {
   const templatePath = path.join(__dirname, '..', 'templates', 'cert.hbs');
@@ -12,12 +12,13 @@ async function generatePdf(data) {
   const browser = await chromium.puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
-    executablePath: await chromium.executablePath,
+    executablePath: await chromium.executablePath, // this will resolve to bundled Chrome
     headless: chromium.headless
   });
 
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
+
   const pdfBuffer = await page.pdf({ format: 'A4' });
   await browser.close();
 

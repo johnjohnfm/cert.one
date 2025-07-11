@@ -1,8 +1,8 @@
 // server.js
 const express = require('express');
 const bodyParser = require('body-parser');
-// ← point at the file you actually have in your repo:
-const generateCert = require('./backend/generateCert');
+// ← point at your util
+const generateCert = require('./backend/utils/generateCert');
 
 const app = express();
 app.use(bodyParser.json());
@@ -22,6 +22,7 @@ app.post('/certify', async (req, res, next) => {
       verificationLink
     } = req.body;
 
+    // returns a Buffer now
     const pdfBuffer = await generateCert({
       userName,
       email,
@@ -43,10 +44,12 @@ app.post('/certify', async (req, res, next) => {
         'Content-Length': pdfBuffer.length
       })
       .send(pdfBuffer);
+
   } catch (err) {
     next(err);
   }
 });
 
+// listen on whatever Render gives you
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Listening on ${PORT}`));

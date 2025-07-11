@@ -3,7 +3,7 @@ const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
 
-// Cert template must be placed in backend/templates/
+// Updated template path for v2
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'CERTONEv2.pdf');
 
 async function generateCert({
@@ -26,7 +26,7 @@ async function generateCert({
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const monoFont = await pdfDoc.embedFont(StandardFonts.Courier);
 
-  const draw = (text, x, y, font = monoFont, size = 10) => {
+  const draw = (text, x, y, font = monoFont, size = 8) => {
     page.drawText(text || '-', {
       x,
       y,
@@ -36,20 +36,38 @@ async function generateCert({
     });
   };
 
-  // Approximate coordinates for fields (adjust as needed)
-  // USER BLOCK
-  draw(userName,       140, 520);
-  draw(email,          140, 500);
-  draw(title,          140, 480);
-  draw(fileName,       140, 460);
-  draw(merkleRoot,     140, 440);
+  // Helper: wrap long strings (e.g. hashes, URLs)
+  const wrapText = (text, max = 64) => {
+    const lines = [];
+    for (let i = 0; i < text.length; i += max) {
+      lines.push(text.slice(i, i + max));
+    }
+    return lines;
+  };
 
-  // ASSET BLOCK
-  draw(certificateId,  140, 400);
-  draw(fileHash,       140, 380);
-  draw(timestamp,      140, 360);
-  draw(blockchain,     140, 340);
-  draw(verificationLink, 140, 320);
+  // Spacing constants
+  let y = 520;
+  const x = 140;
+  const step = 16;
+
+  // USER INFO
+  draw(userName,   x, y); y -= step;
+  draw(email,      x, y); y -= step;
+  draw(title,      x, y); y -= step;
+  draw(fileName,   x, y); y -= step;
+  draw(merkleRoot, x, y); y -= step;
+
+  // ASSET INFO — includes wrapped fields
+  wrapText(certificateId).forEach((line, i) => draw(line, x, y - (i * step)));
+  y -= step * (wrapText(certificateId).length || 1);
+
+  wrapText(fileHash).forEach((line, i) => draw(line, x, y - (i * step)));
+  y -= step * (wrapText(fileHash).length || 1);
+
+  draw(timestamp,   x, y); y -= step;
+  draw(blockchain,  x, y); y -= step;
+
+  wrapText(verificationLink).forEach((line, i) => draw(line, x, y - (i * step)));
 
   const pdfBytes = await pdfDoc.save();
   return pdfBytes;

@@ -3,8 +3,8 @@ const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
 
-// Updated template path for v2
-const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'CERTONEv2.pdf');
+// Updated template path for v2_flat
+const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'CERTONEv2_flat.pdf');
 
 async function generateCert({
   userName,

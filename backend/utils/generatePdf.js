@@ -2,27 +2,35 @@ const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
 
-// Try to use chrome-aws-lambda first, fallback to puppeteer
-let browser;
+// Browser detection and initialization
+let chromeLambda;
+let puppeteer;
 let useLambda = false;
 
+// Try chrome-aws-lambda first (for serverless)
 try {
-  browser = require('chrome-aws-lambda');
+  chromeLambda = require('chrome-aws-lambda');
   useLambda = true;
   console.log('Using chrome-aws-lambda for PDF generation');
 } catch (e) {
-  console.warn('chrome-aws-lambda not available, falling back to puppeteer');
+  console.warn('chrome-aws-lambda not available:', e.message);
+}
+
+// Fallback to regular puppeteer
+if (!useLambda) {
   try {
-    browser = require('puppeteer');
-    useLambda = false;
+    puppeteer = require('puppeteer');
     console.log('Using puppeteer for PDF generation');
-  } catch (e2) {
-    console.error('Neither chrome-aws-lambda nor puppeteer available');
-    throw new Error('No browser engine available');
+  } catch (e) {
+    console.error('Neither chrome-aws-lambda nor puppeteer available:', e.message);
+    throw new Error('No browser engine available for PDF generation');
   }
 }
 
 async function generatePdf(data) {
+  let browserInstance;
+  let page;
+
   try {
     console.log('Starting PDF generation with data:', data);
     
@@ -32,31 +40,8 @@ async function generatePdf(data) {
     }
 
     // Read and compile template
-    const templatePath = path.join(__dirname, '..', 'templates', 'cert.hbs');
-    console.log('Looking for template at:', templatePath);
-    
-    if (!fs.existsSync(templatePath)) {
-      // Try alternative paths
-      const altPaths = [
-        path.join(__dirname, 'templates', 'cert.hbs'),
-        path.join(process.cwd(), 'templates', 'cert.hbs'),
-        path.join(process.cwd(), 'backend', 'templates', 'cert.hbs')
-      ];
-      
-      let found = false;
-      for (const altPath of altPaths) {
-        if (fs.existsSync(altPath)) {
-          console.log(`Found template at alternative path: ${altPath}`);
-          templatePath = altPath;
-          found = true;
-          break;
-        }
-      }
-      
-      if (!found) {
-        throw new Error(`Template not found at any of these paths: ${[templatePath, ...altPaths].join(', ')}`);
-      }
-    }
+    const templatePath = findTemplatePath();
+    console.log('Using template at:', templatePath);
     
     const templateHtml = fs.readFileSync(templatePath, 'utf8');
     console.log('Template loaded successfully');
@@ -65,93 +50,162 @@ async function generatePdf(data) {
     const html = compile(data);
     console.log('Template compiled successfully');
 
-    let browserInstance;
-    let page;
+    // Launch browser with proper configuration
+    browserInstance = await launchBrowser();
+    console.log('Browser launched successfully');
 
-    try {
-      // Launch browser
-      if (useLambda && browser.puppeteer) {
-        console.log('Launching chrome-aws-lambda browser...');
-        browserInstance = await browser.puppeteer.launch({
-          args: browser.args,
-          defaultViewport: browser.defaultViewport,
-          executablePath: await browser.executablePath,
-          headless: browser.headless !== false
-        });
-      } else {
-        console.log('Launching puppeteer browser...');
-        browserInstance = await browser.launch({
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-web-security',
-            '--disable-extensions',
-            '--disable-plugins',
-            '--disable-images',
-            '--disable-javascript',
-            '--disable-plugins-discovery',
-            '--disable-preconnect',
-            '--disable-prefetch',
-            '--single-process',
-            '--no-zygote'
-          ]
-        });
-      }
+    page = await browserInstance.newPage();
+    console.log('New page created');
+    
+    // Set content with timeout handling
+    await page.setContent(html, { 
+      waitUntil: ['networkidle0', 'domcontentloaded'],
+      timeout: 30000
+    });
+    console.log('Content set on page');
 
-      console.log('Browser launched successfully');
-      page = await browserInstance.newPage();
-      console.log('New page created');
-      
-      // Set content and wait for rendering
-      await page.setContent(html, { 
-        waitUntil: ['networkidle0', 'domcontentloaded'],
-        timeout: 30000
-      });
-      console.log('Content set on page');
+    // Generate PDF with A4 format
+    const pdfBuffer = await page.pdf({ 
+      format: 'A4',
+      margin: {
+        top: '20mm',
+        right: '20mm',
+        bottom: '20mm',
+        left: '20mm'
+      },
+      printBackground: true,
+      preferCSSPageSize: true,
+      timeout: 30000
+    });
 
-      // Generate PDF
-      const pdfBuffer = await page.pdf({ 
-        format: 'A4',
-        margin: {
-          top: '20mm',
-          right: '20mm',
-          bottom: '20mm',
-          left: '20mm'
-        },
-        printBackground: true,
-        preferCSSPageSize: true
-      });
-
-      console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
-      return pdfBuffer;
-
-    } finally {
-      // Clean up
-      if (page) {
-        try {
-          await page.close();
-          console.log('Page closed');
-        } catch (closeError) {
-          console.warn('Error closing page:', closeError);
-        }
-      }
-      if (browserInstance) {
-        try {
-          await browserInstance.close();
-          console.log('Browser closed');
-        } catch (closeError) {
-          console.warn('Error closing browser:', closeError);
-        }
-      }
-    }
+    console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+    return pdfBuffer;
 
   } catch (error) {
     console.error('PDF generation error:', error);
     console.error('Stack trace:', error.stack);
     throw new Error(`PDF generation failed: ${error.message}`);
+  } finally {
+    // Cleanup resources
+    await cleanup(page, browserInstance);
+  }
+}
+
+/**
+ * Find template file in various possible locations
+ */
+function findTemplatePath() {
+  const possiblePaths = [
+    path.join(__dirname, '..', 'templates', 'cert.hbs'),
+    path.join(__dirname, 'templates', 'cert.hbs'),
+    path.join(process.cwd(), 'templates', 'cert.hbs'),
+    path.join(process.cwd(), 'backend', 'templates', 'cert.hbs'),
+    path.join(process.cwd(), 'src', 'backend', 'templates', 'cert.hbs')
+  ];
+  
+  for (const templatePath of possiblePaths) {
+    if (fs.existsSync(templatePath)) {
+      return templatePath;
+    }
+  }
+  
+  throw new Error(`Template not found at any of these paths: ${possiblePaths.join(', ')}`);
+}
+
+/**
+ * Launch browser with appropriate configuration
+ */
+async function launchBrowser() {
+  if (useLambda && chromeLambda) {
+    console.log('Launching chrome-aws-lambda browser...');
+    
+    // Get executable path with error handling
+    let executablePath;
+    try {
+      executablePath = await chromeLambda.executablePath;
+      console.log('Chrome executable path:', executablePath);
+    } catch (pathError) {
+      console.error('Failed to get chrome executable path:', pathError);
+      throw new Error('Chrome executable not found in serverless environment');
+    }
+    
+    // Launch with chrome-aws-lambda
+    return await chromeLambda.puppeteer.launch({
+      args: [
+        ...chromeLambda.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--disable-plugins-discovery',
+        '--disable-preconnect',
+        '--disable-prefetch',
+        '--single-process',
+        '--no-zygote',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
+      ],
+      defaultViewport: chromeLambda.defaultViewport,
+      executablePath: executablePath,
+      headless: chromeLambda.headless,
+      ignoreHTTPSErrors: true,
+      timeout: 30000
+    });
+  } else if (puppeteer) {
+    console.log('Launching puppeteer browser...');
+    
+    return await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--disable-plugins-discovery',
+        '--disable-preconnect',
+        '--disable-prefetch',
+        '--single-process',
+        '--no-zygote'
+      ],
+      ignoreHTTPSErrors: true,
+      timeout: 30000
+    });
+  } else {
+    throw new Error('No browser engine available');
+  }
+}
+
+/**
+ * Clean up browser resources
+ */
+async function cleanup(page, browserInstance) {
+  if (page) {
+    try {
+      await page.close();
+      console.log('Page closed');
+    } catch (closeError) {
+      console.warn('Error closing page:', closeError.message);
+    }
+  }
+  
+  if (browserInstance) {
+    try {
+      await browserInstance.close();
+      console.log('Browser closed');
+    } catch (closeError) {
+      console.warn('Error closing browser:', closeError.message);
+    }
   }
 }
 

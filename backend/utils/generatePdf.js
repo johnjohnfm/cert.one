@@ -3,29 +3,26 @@ const path = require('path');
 const handlebars = require('handlebars');
 
 // Browser detection and initialization
-let chromeLambda;
-let puppeteer;
-let useLambda = false;
+let browserEngine;
+let engineType = null;
 
-// Check if we should skip Chrome download
-const skipDownload = process.env.PUPPETEER_SKIP_DOWNLOAD === 'true';
-
-// Try chrome-aws-lambda first (for serverless)
+// Try chrome-aws-lambda first (for serverless/Render)
 try {
-  chromeLambda = require('chrome-aws-lambda');
-  useLambda = true;
+  const chromeLambda = require('chrome-aws-lambda');
+  browserEngine = chromeLambda;
+  engineType = 'chrome-aws-lambda';
   console.log('Using chrome-aws-lambda for PDF generation');
 } catch (e) {
-  console.warn('chrome-aws-lambda not available:', e.message);
-}
-
-// Fallback to regular puppeteer
-if (!useLambda) {
+  console.warn('chrome-aws-lambda not available, trying puppeteer-core');
+  
+  // Try puppeteer-core
   try {
-    puppeteer = require('puppeteer');
-    console.log('Using puppeteer for PDF generation');
-  } catch (e) {
-    console.error('Neither chrome-aws-lambda nor puppeteer available:', e.message);
+    const puppeteerCore = require('puppeteer-core');
+    browserEngine = puppeteerCore;
+    engineType = 'puppeteer-core';
+    console.log('Using puppeteer-core for PDF generation');
+  } catch (e2) {
+    console.error('No browser engine available:', e2.message);
     throw new Error('No browser engine available for PDF generation');
   }
 }
@@ -119,88 +116,78 @@ function findTemplatePath() {
  * Launch browser with appropriate configuration
  */
 async function launchBrowser() {
-  // Check for custom executable path (e.g., on Render.com)
-  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  
-  if (useLambda && chromeLambda) {
+  if (engineType === 'chrome-aws-lambda') {
     console.log('Launching chrome-aws-lambda browser...');
     
-    // Get executable path with error handling
-    let lambdaExecutablePath;
-    try {
-      lambdaExecutablePath = await chromeLambda.executablePath;
-      console.log('Chrome executable path:', lambdaExecutablePath);
-    } catch (pathError) {
-      console.error('Failed to get chrome executable path:', pathError);
-      // Fall back to environment variable if set
-      if (executablePath) {
-        lambdaExecutablePath = executablePath;
-        console.log('Using custom executable path:', executablePath);
-      } else {
-        throw new Error('Chrome executable not found in serverless environment');
-      }
-    }
+    const executablePath = await browserEngine.executablePath;
+    console.log('Chrome executable path:', executablePath);
     
-    // Launch with chrome-aws-lambda
-    return await chromeLambda.puppeteer.launch({
-      args: [
-        ...chromeLambda.args,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-extensions',
-        '--disable-plugins',
-        '--disable-images',
-        '--disable-javascript',
-        '--disable-plugins-discovery',
-        '--disable-preconnect',
-        '--disable-prefetch',
-        '--single-process',
-        '--no-zygote',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
-      ],
-      defaultViewport: chromeLambda.defaultViewport,
-      executablePath: lambdaExecutablePath,
-      headless: chromeLambda.headless || true,
+    // Use puppeteer-core that comes with chrome-aws-lambda
+    const puppeteer = browserEngine.puppeteer;
+    
+    return await puppeteer.launch({
+      args: browserEngine.args,
+      defaultViewport: browserEngine.defaultViewport,
+      executablePath: executablePath,
+      headless: browserEngine.headless,
       ignoreHTTPSErrors: true,
       timeout: 30000
     });
-  } else if (puppeteer) {
-    console.log('Launching puppeteer browser...');
+  } else if (engineType === 'puppeteer-core') {
+    console.log('Launching puppeteer-core browser...');
     
-    const launchOptions = {
-      headless: true,
+    // Look for Chromium in common locations
+    const possiblePaths = [
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      path.join(process.cwd(), 'node_modules/puppeteer/.local-chromium'),
+      path.join(process.cwd(), '.cache/puppeteer')
+    ].filter(Boolean);
+    
+    let executablePath = null;
+    for (const chromePath of possiblePaths) {
+      if (fs.existsSync(chromePath)) {
+        executablePath = chromePath;
+        break;
+      }
+    }
+    
+    // If no Chrome found, try to find the downloaded Chromium
+    if (!executablePath) {
+      const puppeteerDir = path.join(process.cwd(), 'node_modules/puppeteer');
+      if (fs.existsSync(puppeteerDir)) {
+        const chromiumDirs = fs.readdirSync(puppeteerDir).filter(dir => dir.includes('chromium'));
+        if (chromiumDirs.length > 0) {
+          executablePath = path.join(puppeteerDir, chromiumDirs[0], 'chrome');
+        }
+      }
+    }
+    
+    if (!executablePath) {
+      throw new Error('Chrome/Chromium executable not found. Please ensure Chrome is installed.');
+    }
+    
+    console.log('Using Chrome executable at:', executablePath);
+    
+    return await browserEngine.launch({
+      executablePath,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--disable-web-security',
-        '--disable-extensions',
-        '--disable-plugins',
-        '--disable-images',
-        '--disable-javascript',
-        '--disable-plugins-discovery',
-        '--disable-preconnect',
-        '--disable-prefetch',
+        '--no-first-run',
+        '--no-zygote',
         '--single-process',
-        '--no-zygote'
+        '--disable-extensions'
       ],
+      headless: true,
       ignoreHTTPSErrors: true,
       timeout: 30000
-    };
-    
-    // Use custom executable path if provided
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-      console.log('Using custom executable path:', executablePath);
-    }
-    
-    return await puppeteer.launch(launchOptions);
+    });
   } else {
     throw new Error('No browser engine available');
   }

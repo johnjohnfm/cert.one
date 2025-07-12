@@ -1,6 +1,10 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const multer = require('multer');
+const cors = require('cors');
 const generatePdf = require('./utils/generatePdf');
 const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
 const { createTimestampAPI } = require('./utils/opentimestamps');
@@ -12,7 +16,7 @@ const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (req, file, cb) => {
     cb(null, true);
@@ -24,24 +28,19 @@ app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS configuration
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -50,6 +49,7 @@ app.get('/', (req, res) => {
   res.json({
     message: 'CERT.ONE Backend API',
     version: '1.0.0',
+    status: 'operational',
     endpoints: [
       'GET /health - Health check',
       'POST /certify - Generate certificate from JSON data',
@@ -74,13 +74,36 @@ app.post('/certify', async (req, res, next) => {
       });
     }
 
-    const pdfBuffer = await generatePdf(req.body);
+    // Validate fileHash format
+    if (!/^[a-fA-F0-9]{64}$/.test(fileHash)) {
+      return res.status(400).json({ 
+        error: 'Invalid fileHash format. Must be a 64-character SHA256 hash' 
+      });
+    }
+
+    // Add default values for missing fields
+    const certData = {
+      userName,
+      fileName,
+      fileHash,
+      email: req.body.email || '',
+      title: req.body.title || 'Document Certificate',
+      certificateId: req.body.certificateId || generateCertificateId(fileHash),
+      timestamp: req.body.timestamp || new Date().toISOString(),
+      blockchain: req.body.blockchain || 'Bitcoin (OpenTimestamps)',
+      verificationLink: req.body.verificationLink || 'https://ots.tools/verify',
+      merkleRoot: req.body.merkleRoot || ''
+    };
+
+    console.log('Generating PDF with data:', certData);
+    const pdfBuffer = await generatePdf(certData);
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERTONE_${Date.now()}.pdf"`,
+      'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`,
       'Content-Length': pdfBuffer.length
     }).send(pdfBuffer);
+
   } catch (err) {
     console.error('[ERROR] PDF generation failed:', err);
     next(err);
@@ -283,6 +306,7 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('[GLOBAL ERROR]', err);
+  console.error('Stack trace:', err.stack);
   
   // Handle multer errors
   if (err instanceof multer.MulterError) {
@@ -292,6 +316,21 @@ app.use((err, req, res, next) => {
         message: 'Maximum file size is 50MB'
       });
     }
+  }
+  
+  // Handle specific error types
+  if (err.message && err.message.includes('Template not found')) {
+    return res.status(500).json({
+      error: 'Template Error',
+      message: 'PDF template file not found'
+    });
+  }
+  
+  if (err.message && err.message.includes('PDF generation failed')) {
+    return res.status(500).json({
+      error: 'PDF Generation Error',
+      message: 'Failed to generate PDF certificate'
+    });
   }
   
   res.status(500).json({

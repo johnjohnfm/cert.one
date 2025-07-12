@@ -4,10 +4,7 @@
  */
 module.exports = {
   // Skip downloading Chrome during npm install
-  skipDownload: true,
-  
-  // Use system Chrome if available
-  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+  skipDownload: false,  // Changed to false to allow Puppeteer to download its own Chromium
   
   // Cache directory for Chrome downloads (when needed)
   cacheDirectory: '.cache/puppeteer'

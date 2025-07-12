@@ -1,31 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
-
-// Browser detection and initialization
-let browserEngine;
-let engineType = null;
-
-// Try chrome-aws-lambda first (for serverless/Render)
-try {
-  const chromeLambda = require('chrome-aws-lambda');
-  browserEngine = chromeLambda;
-  engineType = 'chrome-aws-lambda';
-  console.log('Using chrome-aws-lambda for PDF generation');
-} catch (e) {
-  console.warn('chrome-aws-lambda not available, trying puppeteer-core');
-  
-  // Try puppeteer-core
-  try {
-    const puppeteerCore = require('puppeteer-core');
-    browserEngine = puppeteerCore;
-    engineType = 'puppeteer-core';
-    console.log('Using puppeteer-core for PDF generation');
-  } catch (e2) {
-    console.error('No browser engine available:', e2.message);
-    throw new Error('No browser engine available for PDF generation');
-  }
-}
+const puppeteer = require('puppeteer');
 
 async function generatePdf(data) {
   let browserInstance;
@@ -51,7 +27,24 @@ async function generatePdf(data) {
     console.log('Template compiled successfully');
 
     // Launch browser with proper configuration
-    browserInstance = await launchBrowser();
+    console.log('Launching Puppeteer browser...');
+    browserInstance = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--deterministic-fetch',
+        '--disable-features=IsolateOrigins',
+        '--disable-site-isolation-trials',
+        '--disable-blink-features=AutomationControlled'
+      ],
+      ignoreHTTPSErrors: true,
+      timeout: 30000
+    });
     console.log('Browser launched successfully');
 
     page = await browserInstance.newPage();
@@ -110,87 +103,6 @@ function findTemplatePath() {
   }
   
   throw new Error(`Template not found at any of these paths: ${possiblePaths.join(', ')}`);
-}
-
-/**
- * Launch browser with appropriate configuration
- */
-async function launchBrowser() {
-  if (engineType === 'chrome-aws-lambda') {
-    console.log('Launching chrome-aws-lambda browser...');
-    
-    const executablePath = await browserEngine.executablePath;
-    console.log('Chrome executable path:', executablePath);
-    
-    // Use puppeteer-core that comes with chrome-aws-lambda
-    const puppeteer = browserEngine.puppeteer;
-    
-    return await puppeteer.launch({
-      args: browserEngine.args,
-      defaultViewport: browserEngine.defaultViewport,
-      executablePath: executablePath,
-      headless: browserEngine.headless,
-      ignoreHTTPSErrors: true,
-      timeout: 30000
-    });
-  } else if (engineType === 'puppeteer-core') {
-    console.log('Launching puppeteer-core browser...');
-    
-    // Look for Chromium in common locations
-    const possiblePaths = [
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      process.env.PUPPETEER_EXECUTABLE_PATH,
-      path.join(process.cwd(), 'node_modules/puppeteer/.local-chromium'),
-      path.join(process.cwd(), '.cache/puppeteer')
-    ].filter(Boolean);
-    
-    let executablePath = null;
-    for (const chromePath of possiblePaths) {
-      if (fs.existsSync(chromePath)) {
-        executablePath = chromePath;
-        break;
-      }
-    }
-    
-    // If no Chrome found, try to find the downloaded Chromium
-    if (!executablePath) {
-      const puppeteerDir = path.join(process.cwd(), 'node_modules/puppeteer');
-      if (fs.existsSync(puppeteerDir)) {
-        const chromiumDirs = fs.readdirSync(puppeteerDir).filter(dir => dir.includes('chromium'));
-        if (chromiumDirs.length > 0) {
-          executablePath = path.join(puppeteerDir, chromiumDirs[0], 'chrome');
-        }
-      }
-    }
-    
-    if (!executablePath) {
-      throw new Error('Chrome/Chromium executable not found. Please ensure Chrome is installed.');
-    }
-    
-    console.log('Using Chrome executable at:', executablePath);
-    
-    return await browserEngine.launch({
-      executablePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions'
-      ],
-      headless: true,
-      ignoreHTTPSErrors: true,
-      timeout: 30000
-    });
-  } else {
-    throw new Error('No browser engine available');
-  }
 }
 
 /**

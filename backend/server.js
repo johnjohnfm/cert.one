@@ -3,7 +3,7 @@ const bodyParser = require('body-parser');
 const multer = require('multer');
 const generatePdf = require('./utils/generatePdf');
 const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
-const { createTimestamp, createTimestampAPI } = require('./utils/opentimestamps');
+const { createTimestampAPI } = require('./utils/opentimestamps');
 const { uploadToIPFS, uploadMetadataToIPFS, createCertificateMetadata } = require('./utils/ipfs');
 
 const app = express();
@@ -15,7 +15,6 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Allow all file types for now, but you can restrict as needed
     cb(null, true);
   }
 });
@@ -26,7 +25,7 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // CORS configuration
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Restrict in production
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
@@ -46,9 +45,35 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'CERT.ONE Backend API',
+    version: '1.0.0',
+    endpoints: [
+      'GET /health - Health check',
+      'POST /certify - Generate certificate from JSON data',
+      'POST /certify-text - Generate certificate from text',
+      'POST /certify-file - Generate certificate from file upload',
+      'POST /verify - Verify a hash',
+      'GET /certificate/:id - Get certificate metadata'
+    ]
+  });
+});
+
 // Original certificate endpoint (for JSON data)
 app.post('/certify', async (req, res, next) => {
   try {
+    console.log('Received certify request:', req.body);
+    
+    // Validate required fields
+    const { userName, fileName, fileHash } = req.body;
+    if (!userName || !fileName || !fileHash) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: userName, fileName, fileHash' 
+      });
+    }
+
     const pdfBuffer = await generatePdf(req.body);
 
     res.set({
@@ -62,7 +87,7 @@ app.post('/certify', async (req, res, next) => {
   }
 });
 
-// New endpoint for text-based certification
+// Text-based certification endpoint
 app.post('/certify-text', async (req, res, next) => {
   try {
     const { text, userName, email, title } = req.body;
@@ -75,7 +100,7 @@ app.post('/certify-text', async (req, res, next) => {
     const fileHash = hashText(text);
     const certificateId = generateCertificateId(fileHash);
     
-    // Create OpenTimestamps proof
+    // Create timestamp (simplified version)
     const timestampData = await createTimestampAPI(fileHash);
     
     // Prepare certificate data
@@ -88,23 +113,24 @@ app.post('/certify-text', async (req, res, next) => {
       fileHash,
       timestamp: new Date().toISOString(),
       blockchain: 'Bitcoin (OpenTimestamps)',
-      verificationLink: timestampData.verificationUrl,
+      verificationLink: timestampData.verificationUrl || 'https://ots.tools/verify',
       merkleRoot: timestampData.otsData || ''
     };
     
-    // Upload metadata to IPFS (optional)
+    // Optional IPFS upload (only if credentials are configured)
     let ipfsResult = null;
-    try {
-      const metadata = createCertificateMetadata(certData, fileHash, timestampData);
-      ipfsResult = await uploadMetadataToIPFS(metadata, `cert-${certificateId}`);
-    } catch (ipfsError) {
-      console.warn('IPFS upload failed:', ipfsError.message);
+    if (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY) {
+      try {
+        const metadata = createCertificateMetadata(certData, fileHash, timestampData);
+        ipfsResult = await uploadMetadataToIPFS(metadata, `cert-${certificateId}`);
+      } catch (ipfsError) {
+        console.warn('IPFS upload failed:', ipfsError.message);
+      }
     }
     
     // Generate PDF certificate
     const pdfBuffer = await generatePdf(certData);
     
-    // Return both PDF and metadata
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
@@ -120,7 +146,7 @@ app.post('/certify-text', async (req, res, next) => {
   }
 });
 
-// New endpoint for file-based certification
+// File-based certification endpoint
 app.post('/certify-file', upload.single('file'), async (req, res, next) => {
   try {
     const file = req.file;
@@ -134,7 +160,7 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
     const fileHash = hashFile(file.buffer);
     const certificateId = generateCertificateId(fileHash);
     
-    // Create OpenTimestamps proof
+    // Create timestamp
     const timestampData = await createTimestampAPI(fileHash);
     
     // Prepare certificate data
@@ -147,39 +173,36 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       fileHash,
       timestamp: new Date().toISOString(),
       blockchain: 'Bitcoin (OpenTimestamps)',
-      verificationLink: timestampData.verificationUrl,
+      verificationLink: timestampData.verificationUrl || 'https://ots.tools/verify',
       merkleRoot: timestampData.otsData || ''
     };
     
-    // Upload file to IPFS (optional)
+    // Optional IPFS upload
     let ipfsResult = null;
-    try {
-      ipfsResult = await uploadToIPFS(file.buffer, file.originalname, {
-        certificateId,
-        userName,
-        hash: fileHash
-      });
-    } catch (ipfsError) {
-      console.warn('IPFS upload failed:', ipfsError.message);
-    }
-    
-    // Upload metadata to IPFS (optional)
     let metadataResult = null;
-    try {
-      const metadata = createCertificateMetadata(certData, fileHash, timestampData);
-      if (ipfsResult) {
-        metadata.ipfs.fileHash = ipfsResult.ipfsHash;
-        metadata.ipfs.gatewayUrl = ipfsResult.gatewayUrl;
+    
+    if (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY) {
+      try {
+        ipfsResult = await uploadToIPFS(file.buffer, file.originalname, {
+          certificateId,
+          userName,
+          hash: fileHash
+        });
+        
+        const metadata = createCertificateMetadata(certData, fileHash, timestampData);
+        if (ipfsResult) {
+          metadata.ipfs.fileHash = ipfsResult.ipfsHash;
+          metadata.ipfs.gatewayUrl = ipfsResult.gatewayUrl;
+        }
+        metadataResult = await uploadMetadataToIPFS(metadata, `cert-${certificateId}`);
+      } catch (ipfsError) {
+        console.warn('IPFS upload failed:', ipfsError.message);
       }
-      metadataResult = await uploadMetadataToIPFS(metadata, `cert-${certificateId}`);
-    } catch (ipfsError) {
-      console.warn('IPFS metadata upload failed:', ipfsError.message);
     }
     
     // Generate PDF certificate
     const pdfBuffer = await generatePdf(certData);
     
-    // Return PDF with metadata headers
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
@@ -210,21 +233,12 @@ app.post('/verify', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid SHA256 hash format' });
     }
     
-    // If OTS data is provided, verify it
-    let verificationResult = null;
-    if (otsData) {
-      const { verifyTimestamp } = require('./utils/opentimestamps');
-      verificationResult = await verifyTimestamp(hash, otsData);
-    }
-    
     res.json({
       hash,
-      verified: verificationResult?.verified || false,
+      verified: false, // Would implement actual verification logic here
       timestamp: new Date().toISOString(),
       verificationUrl: `https://ots.tools/verify`,
-      message: verificationResult?.verified ? 
-        'Hash verified on blockchain' : 
-        'Hash verification pending or failed'
+      message: 'Hash received - verification functionality coming soon'
     });
     
   } catch (err) {
@@ -238,12 +252,10 @@ app.get('/certificate/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     
-    // This would typically query a database
-    // For now, return a placeholder response
     res.json({
       certificateId: id,
-      status: 'This endpoint will be implemented with database integration',
-      message: 'Certificate lookup functionality coming soon'
+      status: 'Certificate lookup functionality coming soon',
+      timestamp: new Date().toISOString()
     });
     
   } catch (err) {
@@ -257,12 +269,13 @@ app.use((req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
     availableEndpoints: [
+      'GET / - API information',
+      'GET /health - Health check',
       'POST /certify - Generate certificate from JSON data',
       'POST /certify-text - Generate certificate from text',
       'POST /certify-file - Generate certificate from file upload',
       'POST /verify - Verify a hash',
-      'GET /certificate/:id - Get certificate metadata',
-      'GET /health - Health check'
+      'GET /certificate/:id - Get certificate metadata'
     ]
   });
 });
@@ -283,7 +296,7 @@ app.use((err, req, res, next) => {
   
   res.status(500).json({
     error: 'Internal Server Error',
-    message: err.message,
+    message: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred',
     timestamp: new Date().toISOString()
   });
 });
@@ -293,11 +306,14 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 CERT.ONE Server listening on port ${PORT}`);
   console.log(`📋 Available endpoints:`);
+  console.log(`   GET / - API information`);
+  console.log(`   GET /health - Health check`);
   console.log(`   POST /certify - Generate certificate from JSON`);
   console.log(`   POST /certify-text - Generate certificate from text`);
   console.log(`   POST /certify-file - Generate certificate from file`);
   console.log(`   POST /verify - Verify hash`);
-  console.log(`   GET /health - Health check`);
+  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`   IPFS: ${process.env.PINATA_API_KEY ? 'Enabled' : 'Disabled'}`);
 });
 
 module.exports = app;

@@ -1,6 +1,14 @@
 // backend/utils/ipfs.js
 const FormData = require('form-data');
-const fetch = require('node-fetch');
+
+// Import fetch conditionally
+let fetch;
+try {
+  fetch = require('node-fetch');
+} catch (e) {
+  console.warn('node-fetch not available, IPFS functionality will be limited');
+  fetch = null;
+}
 
 /**
  * Upload file to IPFS using Pinata
@@ -10,6 +18,10 @@ const fetch = require('node-fetch');
  * @returns {Promise<object>} - IPFS upload result
  */
 async function uploadToIPFS(fileBuffer, fileName, metadata = {}) {
+  if (!fetch) {
+    throw new Error('node-fetch not available for IPFS uploads');
+  }
+
   const PINATA_API_KEY = process.env.PINATA_API_KEY;
   const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
   
@@ -45,11 +57,12 @@ async function uploadToIPFS(fileBuffer, fileName, metadata = {}) {
       body: form
     });
     
-    const result = await response.json();
-    
     if (!response.ok) {
-      throw new Error(`Pinata upload failed: ${result.error || 'Unknown error'}`);
+      const errorText = await response.text();
+      throw new Error(`Pinata upload failed: ${response.status} ${errorText}`);
     }
+    
+    const result = await response.json();
     
     return {
       success: true,
@@ -72,6 +85,10 @@ async function uploadToIPFS(fileBuffer, fileName, metadata = {}) {
  * @returns {Promise<object>} - IPFS upload result
  */
 async function uploadMetadataToIPFS(metadata, name = 'certificate-metadata') {
+  if (!fetch) {
+    throw new Error('node-fetch not available for IPFS uploads');
+  }
+
   const PINATA_API_KEY = process.env.PINATA_API_KEY;
   const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
   
@@ -99,11 +116,12 @@ async function uploadMetadataToIPFS(metadata, name = 'certificate-metadata') {
       })
     });
     
-    const result = await response.json();
-    
     if (!response.ok) {
-      throw new Error(`Pinata JSON upload failed: ${result.error || 'Unknown error'}`);
+      const errorText = await response.text();
+      throw new Error(`Pinata JSON upload failed: ${response.status} ${errorText}`);
     }
+    
+    const result = await response.json();
     
     return {
       success: true,
@@ -123,7 +141,7 @@ async function uploadMetadataToIPFS(metadata, name = 'certificate-metadata') {
  * Create certificate metadata object for IPFS storage
  * @param {object} certData - Certificate data
  * @param {string} fileHash - SHA256 hash of original file
- * @param {string} timestampData - OpenTimestamps data
+ * @param {object} timestampData - OpenTimestamps data
  * @returns {object} - Structured metadata object
  */
 function createCertificateMetadata(certData, fileHash, timestampData) {
@@ -142,9 +160,9 @@ function createCertificateMetadata(certData, fileHash, timestampData) {
       fileHash,
       hashAlgorithm: 'SHA256',
       blockchain: certData.blockchain || 'Bitcoin (OpenTimestamps)',
-      timestamp: timestampData.timestamp,
-      verificationUrl: timestampData.verificationUrl,
-      otsData: timestampData.otsData
+      timestamp: timestampData.timestamp || new Date().toISOString(),
+      verificationUrl: timestampData.verificationUrl || 'https://ots.tools/verify',
+      otsData: timestampData.otsData || null
     },
     ipfs: {
       uploadedAt: new Date().toISOString(),
@@ -160,6 +178,10 @@ function createCertificateMetadata(certData, fileHash, timestampData) {
  * @returns {Promise<object>} - Web3.storage upload result
  */
 async function uploadToWeb3Storage(fileBuffer, fileName) {
+  if (!fetch) {
+    throw new Error('node-fetch not available for Web3.Storage uploads');
+  }
+
   const WEB3_STORAGE_TOKEN = process.env.WEB3_STORAGE_TOKEN;
   
   if (!WEB3_STORAGE_TOKEN) {
@@ -179,11 +201,12 @@ async function uploadToWeb3Storage(fileBuffer, fileName) {
       body: form
     });
     
-    const result = await response.json();
-    
     if (!response.ok) {
-      throw new Error(`Web3.Storage upload failed: ${result.message || 'Unknown error'}`);
+      const errorText = await response.text();
+      throw new Error(`Web3.Storage upload failed: ${response.status} ${errorText}`);
     }
+    
+    const result = await response.json();
     
     return {
       success: true,

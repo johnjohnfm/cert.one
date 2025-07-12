@@ -1,0 +1,67 @@
+services:
+  - type: web
+    name: cert-one-backend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install --production
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: true
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/google-chrome-stable
+      - key: PORT
+        value: 3000
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: MAX_FILE_SIZE
+        value: 52428800
+      - key: DEFAULT_BLOCKCHAIN
+        value: "Bitcoin (OpenTimestamps)"
+      - key: OTS_API_URL
+        value: https://ots.tools/api/v1
+      - key: OTS_TIMEOUT
+        value: 30000
+      # Add these as secret environment variables in Render dashboard:
+      # - PINATA_API_KEY
+      # - PINATA_SECRET_KEY
+      # - JWT_SECRET
+      # - WEB3_STORAGE_TOKEN (optional)
+      # - GITHUB_TOKEN (optional)
+    
+    # Install Chrome dependencies for Puppeteer
+    buildCommand: |
+      apt-get update && apt-get install -y \
+        wget \
+        gnupg \
+        ca-certificates \
+        fonts-liberation \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libcups2 \
+        libdbus-1-3 \
+        libdrm2 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnspr4 \
+        libnss3 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        xdg-utils \
+        libu2f-udev \
+        libvulkan1 \
+        libxss1 \
+        --no-install-recommends && \
+      wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+      echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list && \
+      apt-get update && \
+      apt-get install -y google-chrome-stable --no-install-recommends && \
+      rm -rf /var/lib/apt/lists/* && \
+      npm install --production

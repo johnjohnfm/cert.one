@@ -1,10 +1,8 @@
 /**
- * Puppeteer configuration to control Chrome download behavior
+ * Puppeteer configuration
+ * Allow Puppeteer to download and use its bundled Chromium
  */
 module.exports = {
-  // Allow Puppeteer to download Chromium
-  skipDownload: false,
-  
   // Cache directory for Chrome downloads
   cacheDirectory: '.cache/puppeteer'
 };

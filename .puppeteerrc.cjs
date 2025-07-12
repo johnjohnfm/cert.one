@@ -1,8 +1,12 @@
 /**
- * Puppeteer configuration
- * Allow Puppeteer to download and use its bundled Chromium
+ * Puppeteer configuration for Render.com
  */
+const path = require('path');
+
 module.exports = {
-  // Cache directory for Chrome downloads
-  cacheDirectory: '.cache/puppeteer'
+  // Use absolute path for cache directory
+  cacheDirectory: path.join(__dirname, '.cache', 'puppeteer'),
+  
+  // Skip download and use system Chrome if issues persist
+  skipDownload: process.env.PUPPETEER_SKIP_DOWNLOAD === 'true'
 };

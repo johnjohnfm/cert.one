@@ -21,6 +21,11 @@ services:
         value: https://ots.tools/api/v1
       - key: OTS_TIMEOUT
         value: 30000
+      # Puppeteer configuration
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "false"
+      - key: PUPPETEER_CACHE_DIR
+        value: "/opt/render/project/src/.cache/puppeteer"
       # Add these as secret environment variables in Render dashboard:
       # - PINATA_API_KEY
       # - PINATA_SECRET_KEY

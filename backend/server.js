@@ -472,3 +472,15 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
+app.get('/test-generatePdf-type', (req, res) => {
+  try {
+    res.json({
+      type: typeof generatePdf,
+      isFunction: typeof generatePdf === 'function',
+      toString: generatePdf.toString().slice(0, 100) // first 100 chars
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

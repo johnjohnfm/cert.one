@@ -1,11 +1,10 @@
 services:
   - type: web
     name: cert-one-backend
-    runtime: node
+    runtime: docker
     region: oregon
     plan: free
-    buildCommand: npm run build
-    startCommand: node backend/server.js
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
@@ -21,15 +20,13 @@ services:
         value: https://ots.tools/api/v1
       - key: OTS_TIMEOUT
         value: 30000
-      # Puppeteer configuration for Chromium
+      # Puppeteer configuration for Docker
       - key: PUPPETEER_SKIP_DOWNLOAD
-        value: "false"
-      - key: PUPPETEER_CACHE_DIR
-        value: "/opt/render/project/src/.cache/puppeteer"
-      - key: PUPPETEER_DISABLE_HEADLESS_WARNING
         value: "true"
       - key: PUPPETEER_EXECUTABLE_PATH
-        value: "/opt/render/project/src/.cache/puppeteer/chrome/linux-138.0.7204.94/chrome-linux/chrome"
+        value: "/usr/bin/chromium-browser"
+      - key: PUPPETEER_DISABLE_HEADLESS_WARNING
+        value: "true"
       # Add these as secret environment variables in Render dashboard:
       # - PINATA_API_KEY
       # - PINATA_SECRET_KEY

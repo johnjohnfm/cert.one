@@ -35,6 +35,9 @@ RUN mkdir -p /app/.cache/puppeteer
 # Verify Chromium installation
 RUN echo "Chromium version:" && chromium-browser --version
 
+# Verify the server file exists
+RUN ls -la backend/ && echo "Server file exists: $(ls -la backend/server.js)"
+
 # Create a non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
@@ -48,5 +51,5 @@ USER nodejs
 # Expose port
 EXPOSE 3000
 
-# Start the application
+# Start the application with debugging
 CMD ["node", "backend/server.js"] 

@@ -261,7 +261,7 @@ async function generatePdf(data) {
     });
     
     // Wait a bit for any dynamic content to settle
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     console.log('Content set on page');
 

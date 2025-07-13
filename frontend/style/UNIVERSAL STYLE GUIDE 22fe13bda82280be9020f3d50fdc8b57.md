@@ -175,5 +175,5 @@
 
 ## 10. ATTRIBUTION TEXT
 
-> © 2025 **JOHNJOHNFM, LLC** — All rights reserved.
+> **© 2025 JOHNJOHNFM, LLC — All rights reserved.**
 >

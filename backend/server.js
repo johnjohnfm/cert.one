@@ -94,6 +94,26 @@ app.get('/test-pdf', async (req, res, next) => {
   }
 });
 
+// Simple test endpoint without generatePdf
+app.get('/test-simple', async (req, res, next) => {
+  try {
+    console.log('Testing simple endpoint...');
+    
+    res.json({
+      message: 'Simple test successful',
+      timestamp: new Date().toISOString(),
+      test: 'This endpoint works without generatePdf'
+    });
+    
+  } catch (err) {
+    console.error('[ERROR] Simple test failed:', err);
+    res.status(500).json({
+      error: 'Simple Test Failed',
+      message: err.message
+    });
+  }
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({

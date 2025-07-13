@@ -2,72 +2,71 @@
 
 echo "Starting build process..."
 
-# Install Node dependencies first
+# Install Node dependencies
 echo "Installing Node dependencies..."
 npm install --production
 
-# Install dependencies for Chromium
-echo "Installing Chromium dependencies..."
-apt-get update || true
-apt-get install -y \
-  libnss3 \
-  libatk-bridge2.0-0 \
-  libdrm2 \
-  libxkbcommon0 \
-  libxcomposite1 \
-  libxdamage1 \
-  libxfixes3 \
-  libxrandr2 \
-  libgbm1 \
-  libasound2 \
-  fonts-liberation \
-  ca-certificates \
-  --no-install-recommends || true
+# Check if we're in a deployment environment
+if [ -d "/opt/render" ]; then
+    echo "Detected deployment environment (Render)"
+    CACHE_DIR="/opt/render/project/src/.cache/puppeteer"
+    PUPPETEER_CACHE_DIR="/opt/render/project/src/.cache/puppeteer"
+else
+    echo "Detected local development environment"
+    CACHE_DIR="./.cache/puppeteer"
+    PUPPETEER_CACHE_DIR="./.cache/puppeteer"
+fi
 
-# Clean up
-rm -rf /var/lib/apt/lists/* || true
+# Install Chromium dependencies (only in deployment)
+if [ -d "/opt/render" ]; then
+    echo "Installing Chromium dependencies..."
+    apt-get update -qq
+    apt-get install -y -qq wget gnupg ca-certificates procps libxss1
+fi
 
-# Set environment variables for Puppeteer
-export PUPPETEER_SKIP_DOWNLOAD=false
-export PUPPETEER_CACHE_DIR="/opt/render/project/src/.cache/puppeteer"
-
+# Set up Puppeteer
 echo "Setting up Puppeteer..."
+export PUPPETEER_CACHE_DIR="$PUPPETEER_CACHE_DIR"
 
-# Force install Puppeteer browsers
+# Create cache directory
+echo "Creating cache directory..."
+mkdir -p "$CACHE_DIR"
+
+# Install Puppeteer browsers
 echo "Installing Puppeteer browsers..."
-npx puppeteer browsers install chrome || {
-  echo "Failed to install Chrome via npx, trying alternative method..."
-  
-  # Alternative: Install via npm script
-  cd node_modules/puppeteer
-  node install.mjs || {
-    echo "Failed to install via install.mjs, trying direct download..."
-    # Force download Chromium
-    PUPPETEER_SKIP_DOWNLOAD=false npm install puppeteer@latest --force
-  }
-  cd ../..
-}
+if ! npx puppeteer browsers install chrome; then
+    echo "Failed to install Chrome via npx, trying alternative method..."
+    if ! node node_modules/puppeteer/install.mjs; then
+        echo "Failed to install via install.mjs, trying direct download..."
+        if ! npm install puppeteer --force; then
+            echo "All installation methods failed, but continuing..."
+        fi
+    fi
+fi
 
 # Verify Chromium installation
 echo "Verifying Chromium installation..."
-if [ -d "node_modules/puppeteer/.local-chromium" ] || [ -d "node_modules/puppeteer/chromium" ]; then
-  echo "✅ Chromium found in node_modules/puppeteer"
-  ls -la node_modules/puppeteer/ | grep -E "(chromium|chrome)" || echo "No chromium directories found"
+if [ -d "node_modules/puppeteer/.local-chromium" ] || [ -d "node_modules/puppeteer/.cache" ]; then
+    echo "✅ Chromium found in node_modules/puppeteer"
 else
-  echo "❌ Chromium not found in node_modules/puppeteer"
-  echo "Contents of node_modules/puppeteer:"
-  ls -la node_modules/puppeteer/ || echo "Cannot list puppeteer directory"
+    echo "❌ Chromium not found in node_modules/puppeteer"
+    echo "Contents of node_modules/puppeteer:"
+    ls -la node_modules/puppeteer/
 fi
 
-# Check cache directory
+# Check Puppeteer cache directory
 echo "Checking Puppeteer cache directory..."
-if [ -d "$PUPPETEER_CACHE_DIR" ]; then
-  echo "✅ Cache directory exists: $PUPPETEER_CACHE_DIR"
-  ls -la "$PUPPETEER_CACHE_DIR" || echo "Cannot list cache directory"
+if [ -d "$CACHE_DIR" ]; then
+    echo "✅ Cache directory exists: $CACHE_DIR"
+    ls -la "$CACHE_DIR"
 else
-  echo "❌ Cache directory does not exist: $PUPPETEER_CACHE_DIR"
-  echo "Creating cache directory..."
-  mkdir -p "$PUPPETEER_CACHE_DIR" || echo "Failed to create cache directory"
+    echo "❌ Cache directory does not exist: $CACHE_DIR"
+    echo "Creating cache directory..."
+    if mkdir -p "$CACHE_DIR"; then
+        echo "✅ Cache directory created successfully"
+    else
+        echo "❌ Failed to create cache directory"
+    fi
 fi
 
 echo "Build completed successfully"

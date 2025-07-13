@@ -27,22 +27,47 @@ apt-get install -y \
 # Clean up
 rm -rf /var/lib/apt/lists/* || true
 
-# Ensure Puppeteer downloads Chromium
-echo "Setting up Puppeteer..."
-cd node_modules/puppeteer
-
-# Force download of Chromium if not present
-if [ ! -d ".local-chromium" ] && [ ! -d "chromium" ]; then
-  echo "Downloading Chromium for Puppeteer..."
-  node install.mjs || echo "Chromium download failed, will use system Chrome"
-else
-  echo "Chromium already present"
-fi
-
-cd ../..
-
 # Set environment variables for Puppeteer
 export PUPPETEER_SKIP_DOWNLOAD=false
 export PUPPETEER_CACHE_DIR="/opt/render/project/src/.cache/puppeteer"
+
+echo "Setting up Puppeteer..."
+
+# Force install Puppeteer browsers
+echo "Installing Puppeteer browsers..."
+npx puppeteer browsers install chrome || {
+  echo "Failed to install Chrome via npx, trying alternative method..."
+  
+  # Alternative: Install via npm script
+  cd node_modules/puppeteer
+  node install.mjs || {
+    echo "Failed to install via install.mjs, trying direct download..."
+    # Force download Chromium
+    PUPPETEER_SKIP_DOWNLOAD=false npm install puppeteer@latest --force
+  }
+  cd ../..
+}
+
+# Verify Chromium installation
+echo "Verifying Chromium installation..."
+if [ -d "node_modules/puppeteer/.local-chromium" ] || [ -d "node_modules/puppeteer/chromium" ]; then
+  echo "✅ Chromium found in node_modules/puppeteer"
+  ls -la node_modules/puppeteer/ | grep -E "(chromium|chrome)" || echo "No chromium directories found"
+else
+  echo "❌ Chromium not found in node_modules/puppeteer"
+  echo "Contents of node_modules/puppeteer:"
+  ls -la node_modules/puppeteer/ || echo "Cannot list puppeteer directory"
+fi
+
+# Check cache directory
+echo "Checking Puppeteer cache directory..."
+if [ -d "$PUPPETEER_CACHE_DIR" ]; then
+  echo "✅ Cache directory exists: $PUPPETEER_CACHE_DIR"
+  ls -la "$PUPPETEER_CACHE_DIR" || echo "Cannot list cache directory"
+else
+  echo "❌ Cache directory does not exist: $PUPPETEER_CACHE_DIR"
+  echo "Creating cache directory..."
+  mkdir -p "$PUPPETEER_CACHE_DIR" || echo "Failed to create cache directory"
+fi
 
 echo "Build completed successfully"

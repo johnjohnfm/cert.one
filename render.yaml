@@ -4,6 +4,7 @@ services:
     runtime: node
     region: oregon
     plan: free
+    buildCommand: npm run build
     startCommand: node backend/server.js
     envVars:
       - key: NODE_ENV

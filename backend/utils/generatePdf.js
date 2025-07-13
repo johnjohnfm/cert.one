@@ -51,8 +51,7 @@ async function generatePdf(data) {
     console.log('New page created');
     
     // Set content with timeout handling
-    await page.setContent(html, { 
-         await page.setContent(htmlContent, {
+  await page.setContent(htmlContent, {
       waitUntil: ['networkidle0', 'domcontentloaded'],
       timeout: 30000
     });

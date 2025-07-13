@@ -44,6 +44,56 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test PDF generation endpoint
+app.get('/test-pdf', async (req, res, next) => {
+  try {
+    console.log('Testing PDF generation...');
+    
+    const testData = {
+      userName: 'Test User',
+      email: 'test@example.com',
+      title: 'Test Certificate',
+      fileName: 'test.txt',
+      certificateId: 'TEST123',
+      fileHash: 'a'.repeat(64), // 64 character hash
+      timestamp: new Date().toISOString(),
+      blockchain: 'Bitcoin (OpenTimestamps)',
+      verificationLink: 'https://ots.tools/verify',
+      merkleRoot: 'test-merkle-root'
+    };
+    
+    console.log('Test data:', testData);
+    const pdfBuffer = await generatePdf(testData);
+    
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': 'attachment; filename="test-certificate.html"',
+        'Content-Length': pdfBuffer.length
+      }).send(pdfBuffer);
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="test-certificate.pdf"',
+        'Content-Length': pdfBuffer.length
+      }).send(pdfBuffer);
+    }
+    
+  } catch (err) {
+    console.error('[ERROR] PDF test failed:', err);
+    res.status(500).json({
+      error: 'PDF Test Failed',
+      message: err.message,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -98,11 +148,24 @@ app.post('/certify', async (req, res, next) => {
     console.log('Generating PDF with data:', certData);
     const pdfBuffer = await generatePdf(certData);
 
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`,
-      'Content-Length': pdfBuffer.length
-    }).send(pdfBuffer);
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.html"`,
+        'Content-Length': pdfBuffer.length
+      }).send(pdfBuffer);
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      }).send(pdfBuffer);
+    }
 
   } catch (err) {
     console.error('[ERROR] PDF generation failed:', err);
@@ -154,14 +217,30 @@ app.post('/certify-text', async (req, res, next) => {
     // Generate PDF certificate
     const pdfBuffer = await generatePdf(certData);
     
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-      'Content-Length': pdfBuffer.length,
-      'X-Certificate-ID': certificateId,
-      'X-File-Hash': fileHash,
-      'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
-    }).send(pdfBuffer);
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
+        'Content-Length': pdfBuffer.length,
+        'X-Certificate-ID': certificateId,
+        'X-File-Hash': fileHash,
+        'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
+      }).send(pdfBuffer);
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
+        'Content-Length': pdfBuffer.length,
+        'X-Certificate-ID': certificateId,
+        'X-File-Hash': fileHash,
+        'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
+      }).send(pdfBuffer);
+    }
     
   } catch (err) {
     console.error('[ERROR] Text certification failed:', err);
@@ -226,15 +305,32 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
     // Generate PDF certificate
     const pdfBuffer = await generatePdf(certData);
     
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-      'Content-Length': pdfBuffer.length,
-      'X-Certificate-ID': certificateId,
-      'X-File-Hash': fileHash,
-      'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
-      'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
-    }).send(pdfBuffer);
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
+        'Content-Length': pdfBuffer.length,
+        'X-Certificate-ID': certificateId,
+        'X-File-Hash': fileHash,
+        'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
+        'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
+      }).send(pdfBuffer);
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
+        'Content-Length': pdfBuffer.length,
+        'X-Certificate-ID': certificateId,
+        'X-File-Hash': fileHash,
+        'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
+        'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
+      }).send(pdfBuffer);
+    }
     
   } catch (err) {
     console.error('[ERROR] File certification failed:', err);

@@ -1,45 +1,46 @@
-{
-  "name": "cert.one-backend",
-  "version": "1.0.0",
-  "description": "Blockchain certificate generator with OpenTimestamps and IPFS integration",
-  "main": "backend/server.js",
-  "scripts": {
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js",
-    "test": "echo 'No tests configured'"
-  },
-  "dependencies": {
-    "body-parser": "^1.20.2",
-    "chrome-aws-lambda": "^10.1.0",
-    "puppeteer-core": "^10.1.0",
-    "express": "^4.18.2",
-    "handlebars": "^4.7.8",
-    "multer": "^1.4.5-lts.1",
-    "form-data": "^4.0.0",
-    "node-fetch": "^2.7.0",
-    "dotenv": "^16.0.3",
-    "cors": "^2.8.5",
-    "crypto": "^1.0.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "engines": {
-    "node": ">=16"
-  },
-  "author": "JOHNJOHNFM, LLC",
-  "license": "MIT",
-  "keywords": [
-    "blockchain",
-    "certificate",
-    "opentimestamps",
-    "ipfs",
-    "pdf",
-    "authentication",
-    "verification"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/johnjohnfm/cert.one"
-  }
-}
+ {
+   "name": "cert.one-backend",
+   "version": "1.0.0",
+   "description": "Blockchain certificate generator with OpenTimestamps and IPFS integration",
+   "main": "backend/server.js",
+   "scripts": {
+     "start": "node backend/server.js",
+     "dev": "nodemon backend/server.js",
+     "test": "echo 'No tests configured'"
+   },
+   "dependencies": {
+     "body-parser": "^1.20.2",
+     "chrome-aws-lambda": "^10.1.0",
+     "puppeteer-core": "^10.1.0",
+     "express": "^4.18.2",
+     "handlebars": "^4.7.8",
+     "multer": "^1.4.5-lts.1",
+     "form-data": "^4.0.0",
+     "node-fetch": "^2.7.0",
+     "dotenv": "^16.0.3",
+-    "cors": "^2.8.5",
+-    "crypto": "^1.0.1"
++    "cors": "^2.8.5"
+   },
+   "devDependencies": {
+     "nodemon": "^3.0.1"
+   },
+   "engines": {
+     "node": ">=16"
+   },
+   "author": "JOHNJOHNFM, LLC",
+   "license": "MIT",
+   "keywords": [
+     "blockchain",
+     "certificate",
+     "opentimestamps",
+     "ipfs",
+     "pdf",
+     "authentication",
+     "verification"
+   ],
+   "repository": {
+     "type": "git",
+     "url": "https://github.com/johnjohnfm/cert.one"
+   }
+ }

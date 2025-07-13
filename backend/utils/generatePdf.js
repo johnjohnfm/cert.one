@@ -52,6 +52,7 @@ async function generatePdf(data) {
     
     // Set content with timeout handling
     await page.setContent(html, { 
+         await page.setContent(htmlContent, {
       waitUntil: ['networkidle0', 'domcontentloaded'],
       timeout: 30000
     });
@@ -77,55 +78,14 @@ async function generatePdf(data) {
   } catch (error) {
     console.error('PDF generation error:', error);
     console.error('Stack trace:', error.stack);
+    if (error.message && error.message.includes('executable')) {
+      console.error(
+        'Hint: Chrome/Chromium may not be installed or PUPPETEER_EXECUTABLE_PATH is incorrect.'
+      );
+    }
     throw new Error(`PDF generation failed: ${error.message}`);
   } finally {
     // Cleanup resources
     await cleanup(page, browserInstance);
   }
 }
-
-/**
- * Find template file in various possible locations
- */
-function findTemplatePath() {
-  const possiblePaths = [
-    path.join(__dirname, '..', 'templates', 'cert.hbs'),
-    path.join(__dirname, 'templates', 'cert.hbs'),
-    path.join(process.cwd(), 'templates', 'cert.hbs'),
-    path.join(process.cwd(), 'backend', 'templates', 'cert.hbs'),
-    path.join(process.cwd(), 'src', 'backend', 'templates', 'cert.hbs')
-  ];
-  
-  for (const templatePath of possiblePaths) {
-    if (fs.existsSync(templatePath)) {
-      return templatePath;
-    }
-  }
-  
-  throw new Error(`Template not found at any of these paths: ${possiblePaths.join(', ')}`);
-}
-
-/**
- * Clean up browser resources
- */
-async function cleanup(page, browserInstance) {
-  if (page) {
-    try {
-      await page.close();
-      console.log('Page closed');
-    } catch (closeError) {
-      console.warn('Error closing page:', closeError.message);
-    }
-  }
-  
-  if (browserInstance) {
-    try {
-      await browserInstance.close();
-      console.log('Browser closed');
-    } catch (closeError) {
-      console.warn('Error closing browser:', closeError.message);
-    }
-  }
-}
-
-module.exports = generatePdf;

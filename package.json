@@ -6,8 +6,7 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
-    "test": "echo 'No tests configured'",
-    "build": "chmod +x build.sh && ./build.sh"
+    "test": "echo 'No tests configured'"
   },
   "dependencies": {
     "body-parser": "^1.20.2",

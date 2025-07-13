@@ -11,22 +11,24 @@ if [ -d "/opt/render" ]; then
     echo "Detected deployment environment (Render)"
     CACHE_DIR="/opt/render/project/src/.cache/puppeteer"
     PUPPETEER_CACHE_DIR="/opt/render/project/src/.cache/puppeteer"
+    
+    # Install Chromium dependencies
+    echo "Installing Chromium dependencies..."
+    apt-get update -qq
+    apt-get install -y -qq wget gnupg ca-certificates procps libxss1 libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 fonts-liberation
+    
+    # Clean up
+    rm -rf /var/lib/apt/lists/*
 else
     echo "Detected local development environment"
     CACHE_DIR="./.cache/puppeteer"
     PUPPETEER_CACHE_DIR="./.cache/puppeteer"
 fi
 
-# Install Chromium dependencies (only in deployment)
-if [ -d "/opt/render" ]; then
-    echo "Installing Chromium dependencies..."
-    apt-get update -qq
-    apt-get install -y -qq wget gnupg ca-certificates procps libxss1
-fi
-
 # Set up Puppeteer
 echo "Setting up Puppeteer..."
 export PUPPETEER_CACHE_DIR="$PUPPETEER_CACHE_DIR"
+export PUPPETEER_SKIP_DOWNLOAD="false"
 
 # Create cache directory
 echo "Creating cache directory..."
@@ -46,10 +48,14 @@ fi
 
 # Verify Chromium installation
 echo "Verifying Chromium installation..."
-if [ -d "node_modules/puppeteer/.local-chromium" ] || [ -d "node_modules/puppeteer/.cache" ]; then
-    echo "✅ Chromium found in node_modules/puppeteer"
+if [ -d "node_modules/puppeteer/.local-chromium" ] || [ -d "node_modules/puppeteer/.cache" ] || [ -d "$CACHE_DIR/chrome" ]; then
+    echo "✅ Chromium found"
+    if [ -d "$CACHE_DIR/chrome" ]; then
+        echo "Chrome found in cache directory:"
+        ls -la "$CACHE_DIR/chrome"
+    fi
 else
-    echo "❌ Chromium not found in node_modules/puppeteer"
+    echo "❌ Chromium not found"
     echo "Contents of node_modules/puppeteer:"
     ls -la node_modules/puppeteer/
 fi

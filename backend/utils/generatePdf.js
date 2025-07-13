@@ -60,7 +60,9 @@ async function generatePdf(data) {
 
     // Launch browser with proper configuration
     console.log('Launching Puppeteer browser...');
-    browserInstance = await puppeteer.launch({
+    console.log('Puppeteer version:', require('puppeteer/package.json').version);
+    
+    const launchOptions = {
       headless: 'new',
       args: [
         '--no-sandbox',
@@ -76,13 +78,36 @@ async function generatePdf(data) {
       ],
       ignoreHTTPSErrors: true,
       timeout: 30000
-    });
+    };
+    
+    // Add executable path if specified in environment
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      console.log('Using custom Chrome executable:', process.env.PUPPETEER_EXECUTABLE_PATH);
+    } else {
+      // Try to find system Chrome as fallback
+      const { execSync } = require('child_process');
+      try {
+        const chromePath = execSync('which google-chrome || which chromium-browser || which chrome', { encoding: 'utf8' }).trim();
+        if (chromePath) {
+          launchOptions.executablePath = chromePath;
+          console.log('Using system Chrome executable:', chromePath);
+        }
+      } catch (error) {
+        console.log('No system Chrome found, using bundled Chromium');
+      }
+    }
+    
+    console.log('Launch options:', JSON.stringify(launchOptions, null, 2));
+    
+    browserInstance = await puppeteer.launch(launchOptions);
     console.log('Browser launched successfully');
 
     page = await browserInstance.newPage();
     console.log('New page created');
     
     // Set content with timeout handling
+    console.log('Setting page content...');
     await page.setContent(html, {
       waitUntil: ['networkidle0', 'domcontentloaded'],
       timeout: 30000
@@ -90,6 +115,7 @@ async function generatePdf(data) {
     console.log('Content set on page');
 
     // Generate PDF with A4 format
+    console.log('Generating PDF...');
     const pdfBuffer = await page.pdf({ 
       format: 'A4',
       margin: {
@@ -108,12 +134,31 @@ async function generatePdf(data) {
 
   } catch (error) {
     console.error('PDF generation error:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
     console.error('Stack trace:', error.stack);
+    
+    // Check for specific Puppeteer errors
     if (error.message && error.message.includes('executable')) {
-      console.error(
-        'Hint: Chrome/Chromium may not be installed or PUPPETEER_EXECUTABLE_PATH is incorrect.'
-      );
+      console.error('Chrome/Chromium executable not found. Please ensure Chrome is installed or set PUPPETEER_EXECUTABLE_PATH');
     }
+    
+    if (error.message && error.message.includes('timeout')) {
+      console.error('PDF generation timed out. This might be due to slow system resources.');
+    }
+    
+    if (error.message && error.message.includes('ECONNREFUSED')) {
+      console.error('Connection refused. This might be a network or firewall issue.');
+    }
+    
+    // Log environment info for debugging
+    console.error('Environment info:');
+    console.error('- Node version:', process.version);
+    console.error('- Platform:', process.platform);
+    console.error('- Architecture:', process.arch);
+    console.error('- Current working directory:', process.cwd());
+    console.error('- PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH || 'not set');
+    
     throw new Error(`PDF generation failed: ${error.message}`);
   } finally {
     // Cleanup resources

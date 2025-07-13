@@ -4,8 +4,10 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: npm start
+    buildCommand: |
+      chmod +x build.sh
+      ./build.sh
+    startCommand: node backend/server.js
     envVars:
       - key: NODE_ENV
         value: production

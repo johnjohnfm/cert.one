@@ -1,234 +1,306 @@
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta charset="utf-8"/>
-<meta name="generator" content="pdf2htmlEX"/>
-<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
-<style type="text/css">
-/* Certificate Styles */
-body {
-    font-family: 'Times New Roman', serif;
-    margin: 0;
-    padding: 20px;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    min-height: 100vh;
+const fs = require('fs');
+const path = require('path');
+const handlebars = require('handlebars');
+const puppeteer = require('puppeteer');
+
+// Helper function to find template path
+function findTemplatePath() {
+  const possiblePaths = [
+    path.join(__dirname, '../templates/cert.hbs'),
+    path.join(__dirname, '../../templates/cert.hbs'),
+    path.join(process.cwd(), 'templates/cert.hbs'),
+    path.join(process.cwd(), 'backend/templates/cert.hbs')
+  ];
+  
+  for (const templatePath of possiblePaths) {
+    if (fs.existsSync(templatePath)) {
+      return templatePath;
+    }
+  }
+  
+  throw new Error('Certificate template not found. Checked paths: ' + possiblePaths.join(', '));
 }
 
-.certificate-container {
-    max-width: 800px;
-    margin: 0 auto;
-    background: white;
-    border-radius: 15px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-    overflow: hidden;
-    position: relative;
+// Helper function to cleanup browser resources
+async function cleanup(page, browserInstance) {
+  try {
+    if (page) {
+      await page.close();
+      console.log('Page closed');
+    }
+    if (browserInstance) {
+      await browserInstance.close();
+      console.log('Browser closed');
+    }
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+  }
 }
 
-.certificate-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 30px;
-    text-align: center;
-    position: relative;
+// Helper function to find Chromium executable
+function findChromiumExecutable() {
+  try {
+    const { execSync } = require('child_process');
+    const chromePath = execSync('which google-chrome || which chromium-browser || which chrome', { encoding: 'utf8' }).trim();
+    return chromePath || null;
+  } catch (error) {
+    return null;
+  }
 }
 
-.certificate-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/></svg>') repeat;
-    opacity: 0.3;
+async function generatePdfFallback(data) {
+  console.log('Using fallback PDF generation method...');
+  
+  // Use the sophisticated Handlebars template
+  const templatePath = findTemplatePath();
+  console.log('Using template at:', templatePath);
+  
+  try {
+    // Load and compile template
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    console.log('Template loaded successfully');
+    
+    const template = handlebars.compile(templateSource);
+    console.log('Template compiled successfully');
+    
+    // Generate HTML with data
+    const html = template(data);
+    console.log('HTML generated with data');
+    
+    // Return the HTML content
+    console.log('Fallback method: Returning HTML content (PDF generation not available)');
+    return html;
+    
+  } catch (error) {
+    console.error('Error in fallback generation:', error);
+    
+    // Return a simple HTML fallback if template fails
+    return `
+      <html>
+        <head>
+          <title>Certificate</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            .cert { border: 2px solid #333; padding: 20px; margin: 20px; }
+            .title { font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+            .field { margin: 10px 0; }
+            .label { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="cert">
+            <div class="title">Certificate</div>
+            <div class="field"><span class="label">User:</span> ${data.userName || 'Unknown'}</div>
+            <div class="field"><span class="label">Title:</span> ${data.title || 'Certificate'}</div>
+            <div class="field"><span class="label">Certificate ID:</span> ${data.certificateId || 'N/A'}</div>
+            <div class="field"><span class="label">Date:</span> ${data.timestamp || 'N/A'}</div>
+            <div class="field"><span class="label">File Hash:</span> ${data.fileHash || 'N/A'}</div>
+            <div class="field"><span class="label">Blockchain:</span> ${data.blockchain || 'N/A'}</div>
+          </div>
+        </body>
+      </html>
+    `;
+  }
 }
 
-.certificate-title {
-    font-size: 2.5em;
-    font-weight: bold;
-    margin: 0;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    position: relative;
-    z-index: 1;
-}
+async function generatePdf(data) {
+  let browserInstance;
+  let page;
 
-.certificate-subtitle {
-    font-size: 1.2em;
-    margin: 10px 0 0 0;
-    opacity: 0.9;
-    position: relative;
-    z-index: 1;
-}
+  try {
+    console.log('Starting PDF generation with data:', data);
+    
+    // Validate input data
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid data provided for PDF generation');
+    }
 
-.certificate-body {
-    padding: 40px;
-    text-align: center;
-}
+    // Read and compile template
+    const templatePath = findTemplatePath();
+    console.log('Using template at:', templatePath);
+    
+    const templateHtml = fs.readFileSync(templatePath, 'utf8');
+    console.log('Template loaded successfully');
+    
+    const compile = handlebars.compile(templateHtml);
+    const html = compile(data);
+    console.log('Template compiled successfully');
 
-.certificate-text {
-    font-size: 1.1em;
-    line-height: 1.8;
-    color: #333;
-    margin-bottom: 30px;
-}
-
-.recipient-name {
-    font-size: 2em;
-    font-weight: bold;
-    color: #2c3e50;
-    margin: 20px 0;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-}
-
-.certificate-details {
-    background: #f8f9fa;
-    border-radius: 10px;
-    padding: 25px;
-    margin: 30px 0;
-    border-left: 5px solid #667eea;
-}
-
-.detail-row {
-    display: flex;
-    justify-content: space-between;
-    margin: 10px 0;
-    padding: 8px 0;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.detail-row:last-child {
-    border-bottom: none;
-}
-
-.detail-label {
-    font-weight: bold;
-    color: #495057;
-    min-width: 150px;
-}
-
-.detail-value {
-    color: #6c757d;
-    text-align: right;
-    flex: 1;
-}
-
-.certificate-footer {
-    background: #2c3e50;
-    color: white;
-    padding: 20px;
-    text-align: center;
-}
-
-.verification-info {
-    font-size: 0.9em;
-    opacity: 0.8;
-    margin-top: 10px;
-}
-
-.certificate-seal {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    width: 80px;
-    height: 80px;
-    background: radial-gradient(circle, #e74c3c, #c0392b);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 0.8em;
-    text-align: center;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-}
-
-.certificate-number {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    font-size: 0.8em;
-    color: #6c757d;
-    opacity: 0.7;
-}
-
-@media print {
-    body {
-        background: white;
-        margin: 0;
-        padding: 0;
+    // Launch browser with proper configuration
+    console.log('Launching Puppeteer browser...');
+    console.log('Puppeteer version:', require('puppeteer/package.json').version);
+    
+    const launchOptions = {
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--deterministic-fetch',
+        '--disable-features=IsolateOrigins',
+        '--disable-site-isolation-trials',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-field-trial-config',
+        '--disable-ipc-flooding-protection',
+        '--memory-pressure-off',
+        '--max_old_space_size=4096'
+      ],
+      ignoreHTTPSErrors: true,
+      timeout: 15000,
+      protocolTimeout: 15000
+    };
+    
+    // Try to find Chrome executable
+    const chromePath = findChromiumExecutable();
+    if (chromePath) {
+      launchOptions.executablePath = chromePath;
+      console.log('Using system Chrome executable:', chromePath);
+    } else {
+      console.log('No system Chrome found, will try bundled Chromium');
+      
+      // Check if bundled Chromium exists
+      const puppeteerPath = path.dirname(require.resolve('puppeteer'));
+      const chromiumPaths = [
+        path.join(puppeteerPath, '.local-chromium'),
+        path.join(puppeteerPath, 'chromium'),
+        path.join(puppeteerPath, '.cache', 'chrome'),
+        process.env.PUPPETEER_EXECUTABLE_PATH
+      ].filter(Boolean);
+      
+      let chromiumFound = false;
+      for (const chromiumPath of chromiumPaths) {
+        if (chromiumPath && fs.existsSync(chromiumPath)) {
+          console.log('Found bundled Chromium at:', chromiumPath);
+          launchOptions.executablePath = chromiumPath;
+          chromiumFound = true;
+          break;
+        }
+      }
+      
+      if (!chromiumFound) {
+        console.log('No bundled Chromium found, skipping PDF generation attempt');
+        console.log('Falling back to HTML generation...');
+        return await generatePdfFallback(data);
+      }
     }
     
-    .certificate-container {
-        box-shadow: none;
-        border-radius: 0;
+    console.log('Launch options:', JSON.stringify(launchOptions, null, 2));
+    
+    // Quick timeout for browser launch
+    const browserPromise = puppeteer.launch(launchOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Browser launch timeout')), 10000)
+    );
+    
+    browserInstance = await Promise.race([browserPromise, timeoutPromise]);
+    console.log('Browser launched successfully');
+
+    page = await browserInstance.newPage();
+    console.log('New page created');
+    
+    // Set content with timeout handling
+    console.log('Setting page content...');
+    await page.setContent(html, {
+      waitUntil: ['domcontentloaded'],
+      timeout: 10000
+    });
+    
+    // Wait a bit for any dynamic content to settle
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    console.log('Content set on page');
+
+    // Generate PDF with A4 format
+    console.log('Generating PDF...');
+    const pdfBuffer = await page.pdf({ 
+      format: 'A4',
+      margin: {
+        top: '20mm',
+        right: '20mm',
+        bottom: '20mm',
+        left: '20mm'
+      },
+      printBackground: true,
+      preferCSSPageSize: true,
+      timeout: 15000,
+      displayHeaderFooter: false,
+      omitBackground: false,
+      scale: 1.0,
+      landscape: false
+    });
+
+    console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+    
+    // Validate PDF buffer
+    if (pdfBuffer.length < 100) {
+      throw new Error('Generated PDF is too small, likely corrupted');
     }
+    
+    // Check if it's actually a PDF (should start with %PDF)
+    const pdfHeader = pdfBuffer.toString('ascii', 0, 4);
+    console.log('PDF header check:', `"${pdfHeader}"`);
+    
+    if (pdfHeader !== '%PDF') {
+      console.warn('Generated content does not appear to be a valid PDF, falling back to HTML');
+      console.warn('First 20 bytes as hex:', pdfBuffer.toString('hex', 0, 20));
+      console.warn('First 20 bytes as ascii:', pdfBuffer.toString('ascii', 0, 20));
+      return await generatePdfFallback(data);
+    }
+    
+    console.log('PDF validation passed, returning PDF buffer');
+    return pdfBuffer;
+
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Stack trace:', error.stack);
+    
+    // Check for specific Puppeteer errors
+    if (error.message && error.message.includes('executable')) {
+      console.error('Chrome/Chromium executable not found. Please ensure Chrome is installed or set PUPPETEER_EXECUTABLE_PATH');
+    }
+    
+    if (error.message && error.message.includes('timeout')) {
+      console.error('PDF generation timed out. This might be due to slow system resources.');
+    }
+    
+    if (error.message && error.message.includes('ECONNREFUSED')) {
+      console.error('Connection refused. This might be a network or firewall issue.');
+    }
+    
+    // Log environment info for debugging
+    console.error('Environment info:');
+    console.error('- Node version:', process.version);
+    console.error('- Platform:', process.platform);
+    console.error('- Architecture:', process.arch);
+    console.error('- Current working directory:', process.cwd());
+    console.error('- PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH || 'not set');
+    
+    // Try fallback method
+    console.log('Attempting fallback PDF generation...');
+    try {
+      return await generatePdfFallback(data);
+    } catch (fallbackError) {
+      console.error('Fallback PDF generation also failed:', fallbackError);
+      throw new Error(`PDF generation failed: ${error.message}`);
+    }
+  } finally {
+    // Cleanup resources
+    await cleanup(page, browserInstance);
+  }
 }
-</style>
-</head>
-<body>
-<div class="certificate-container">
-    <div class="certificate-seal">
-        CERTIFIED
-    </div>
-    
-    <div class="certificate-header">
-        <h1 class="certificate-title">{{title}}</h1>
-        <p class="certificate-subtitle">Certificate of Achievement</p>
-    </div>
-    
-    <div class="certificate-body">
-        <p class="certificate-text">
-            This is to certify that
-        </p>
-        
-        <div class="recipient-name">{{userName}}</div>
-        
-        <p class="certificate-text">
-            has successfully completed the requirements and is hereby awarded this certificate of achievement.
-        </p>
-        
-        <div class="certificate-details">
-            <div class="detail-row">
-                <span class="detail-label">Certificate ID:</span>
-                <span class="detail-value">{{certificateId}}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Date Issued:</span>
-                <span class="detail-value">{{timestamp}}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">File Name:</span>
-                <span class="detail-value">{{fileName}}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">File Hash:</span>
-                <span class="detail-value">{{fileHash}}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Blockchain:</span>
-                <span class="detail-value">{{blockchain}}</span>
-            </div>
-            {{#if merkleRoot}}
-            <div class="detail-row">
-                <span class="detail-label">Merkle Root:</span>
-                <span class="detail-value">{{merkleRoot}}</span>
-            </div>
-            {{/if}}
-        </div>
-    </div>
-    
-    <div class="certificate-footer">
-        <p>This certificate has been digitally signed and timestamped on the blockchain for verification.</p>
-        <div class="verification-info">
-            Verification Link: <a href="{{verificationLink}}" style="color: #3498db;">{{verificationLink}}</a>
-        </div>
-    </div>
-    
-    <div class="certificate-number">
-        Certificate #{{certificateId}}
-    </div>
-</div>
-</body>
-</html>
+
+module.exports = generatePdf;

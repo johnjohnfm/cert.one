@@ -3,6 +3,38 @@ const path = require('path');
 const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
 
+// Helper function to find template path
+function findTemplatePath() {
+  const possiblePaths = [
+    path.join(__dirname, '../templates/cert.hbs'),
+    path.join(__dirname, '../../templates/cert.hbs'),
+    path.join(process.cwd(), 'templates/cert.hbs'),
+    path.join(process.cwd(), 'backend/templates/cert.hbs')
+  ];
+  
+  for (const templatePath of possiblePaths) {
+    if (fs.existsSync(templatePath)) {
+      return templatePath;
+    }
+  }
+  
+  throw new Error('Certificate template not found. Checked paths: ' + possiblePaths.join(', '));
+}
+
+// Helper function to cleanup browser resources
+async function cleanup(page, browserInstance) {
+  try {
+    if (page) {
+      await page.close();
+    }
+    if (browserInstance) {
+      await browserInstance.close();
+    }
+  } catch (error) {
+    console.warn('Cleanup warning:', error.message);
+  }
+}
+
 async function generatePdf(data) {
   let browserInstance;
   let page;
@@ -51,7 +83,7 @@ async function generatePdf(data) {
     console.log('New page created');
     
     // Set content with timeout handling
-  await page.setContent(htmlContent, {
+    await page.setContent(html, {
       waitUntil: ['networkidle0', 'domcontentloaded'],
       timeout: 30000
     });
@@ -88,3 +120,5 @@ async function generatePdf(data) {
     await cleanup(page, browserInstance);
   }
 }
+
+module.exports = generatePdf;

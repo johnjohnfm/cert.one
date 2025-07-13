@@ -28,6 +28,8 @@ services:
         value: "false"
       - key: PUPPETEER_CACHE_DIR
         value: "/opt/render/project/src/.cache/puppeteer"
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: "/opt/render/project/src/.cache/puppeteer/chrome/linux-138.0.7204.94/chrome-linux64/chrome"
       # Add these as secret environment variables in Render dashboard:
       # - PINATA_API_KEY
       # - PINATA_SECRET_KEY

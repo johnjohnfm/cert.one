@@ -185,10 +185,24 @@ async function generatePdf(data) {
         '--deterministic-fetch',
         '--disable-features=IsolateOrigins',
         '--disable-site-isolation-trials',
-        '--disable-blink-features=AutomationControlled'
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-field-trial-config',
+        '--disable-ipc-flooding-protection',
+        '--memory-pressure-off',
+        '--max_old_space_size=4096'
       ],
       ignoreHTTPSErrors: true,
-      timeout: 30000
+      timeout: 60000,
+      protocolTimeout: 60000
     };
     
     // Try to find Chrome executable
@@ -242,9 +256,13 @@ async function generatePdf(data) {
     // Set content with timeout handling
     console.log('Setting page content...');
     await page.setContent(html, {
-      waitUntil: ['networkidle0', 'domcontentloaded'],
+      waitUntil: ['domcontentloaded'],
       timeout: 30000
     });
+    
+    // Wait a bit for any dynamic content to settle
+    await page.waitForTimeout(1000);
+    
     console.log('Content set on page');
 
     // Generate PDF with A4 format
@@ -259,10 +277,27 @@ async function generatePdf(data) {
       },
       printBackground: true,
       preferCSSPageSize: true,
-      timeout: 30000
+      timeout: 60000,
+      displayHeaderFooter: false,
+      omitBackground: false,
+      scale: 1.0,
+      landscape: false
     });
 
     console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+    
+    // Validate PDF buffer
+    if (pdfBuffer.length < 100) {
+      throw new Error('Generated PDF is too small, likely corrupted');
+    }
+    
+    // Check if it's actually a PDF (should start with %PDF)
+    const pdfHeader = pdfBuffer.toString('ascii', 0, 4);
+    if (pdfHeader !== '%PDF') {
+      console.warn('Generated content does not appear to be a valid PDF, falling back to HTML');
+      return await generatePdfFallback(data);
+    }
+    
     return pdfBuffer;
 
   } catch (error) {

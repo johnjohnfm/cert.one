@@ -44,6 +44,15 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test endpoint to check if static files are being served
+app.get('/test-file-access', (req, res) => {
+  res.json({
+    message: 'This endpoint works',
+    timestamp: new Date().toISOString(),
+    test: 'Testing if static files are being served'
+  });
+});
+
 // Test PDF generation endpoint
 app.get('/test-pdf', async (req, res, next) => {
   try {
@@ -72,16 +81,16 @@ app.get('/test-pdf', async (req, res, next) => {
       // Fallback method returned HTML
       res.set({
         'Content-Type': 'text/html',
-        'Content-Disposition': 'attachment; filename="test-certificate.html"',
-        'Content-Length': pdfBuffer.length
-      }).send(pdfBuffer);
+        'Content-Disposition': 'attachment; filename="test-certificate.html"'
+      });
+      res.end(pdfBuffer);
     } else {
       // Normal PDF response
       res.set({
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="test-certificate.pdf"',
-        'Content-Length': pdfBuffer.length
-      }).send(pdfBuffer);
+        'Content-Disposition': 'attachment; filename="test-certificate.pdf"'
+      });
+      res.end(pdfBuffer);
     }
     
   } catch (err) {
@@ -175,16 +184,16 @@ app.post('/certify', async (req, res, next) => {
       // Fallback method returned HTML
       res.set({
         'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.html"`,
-        'Content-Length': pdfBuffer.length
-      }).send(pdfBuffer);
+        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.html"`
+      });
+      res.end(pdfBuffer);
     } else {
       // Normal PDF response
       res.set({
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`,
-        'Content-Length': pdfBuffer.length
-      }).send(pdfBuffer);
+        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`
+      });
+      res.end(pdfBuffer);
     }
 
   } catch (err) {
@@ -245,21 +254,21 @@ app.post('/certify-text', async (req, res, next) => {
       res.set({
         'Content-Type': 'text/html',
         'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
-        'Content-Length': pdfBuffer.length,
         'X-Certificate-ID': certificateId,
         'X-File-Hash': fileHash,
         'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
-      }).send(pdfBuffer);
+      });
+      res.end(pdfBuffer);
     } else {
       // Normal PDF response
       res.set({
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-        'Content-Length': pdfBuffer.length,
         'X-Certificate-ID': certificateId,
         'X-File-Hash': fileHash,
         'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
-      }).send(pdfBuffer);
+      });
+      res.end(pdfBuffer);
     }
     
   } catch (err) {
@@ -333,23 +342,23 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       res.set({
         'Content-Type': 'text/html',
         'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
-        'Content-Length': pdfBuffer.length,
         'X-Certificate-ID': certificateId,
         'X-File-Hash': fileHash,
         'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
         'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
-      }).send(pdfBuffer);
+      });
+      res.end(pdfBuffer);
     } else {
       // Normal PDF response
       res.set({
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-        'Content-Length': pdfBuffer.length,
         'X-Certificate-ID': certificateId,
         'X-File-Hash': fileHash,
         'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
         'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
-      }).send(pdfBuffer);
+      });
+      res.end(pdfBuffer);
     }
     
   } catch (err) {

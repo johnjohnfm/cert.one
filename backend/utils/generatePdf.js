@@ -51,12 +51,23 @@ async function generatePdf(data) {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-logging',
+        '--silent'
       ],
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
     });
     
     const page = await browser.newPage();
+    
+    // Disable console output in the page
+    await page.evaluateOnNewDocument(() => {
+      console.log = () => {};
+      console.error = () => {};
+      console.warn = () => {};
+      console.info = () => {};
+    });
+    
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
     // Generate PDF
@@ -68,7 +79,8 @@ async function generatePdf(data) {
         right: '20px',
         bottom: '20px',
         left: '20px'
-      }
+      },
+      preferCSSPageSize: true
     });
     
     console.log('PDF generated successfully');

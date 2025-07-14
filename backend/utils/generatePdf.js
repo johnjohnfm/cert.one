@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
+const puppeteer = require('puppeteer');
 
 // Simple template path finder
 function findTemplatePath() {
@@ -22,6 +23,7 @@ function findTemplatePath() {
 
 // Main PDF generation function
 async function generatePdf(data) {
+  let browser;
   try {
     console.log('Starting PDF generation with data:', data);
     
@@ -42,13 +44,54 @@ async function generatePdf(data) {
     const html = template(data);
     console.log('Template compiled successfully');
 
-    // Return HTML as buffer
-    console.log('Returning HTML content');
-    return Buffer.from(html, 'utf8');
+    // Launch Puppeteer
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+    });
+    
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    // Generate PDF
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '20px',
+        right: '20px',
+        bottom: '20px',
+        left: '20px'
+      }
+    });
+    
+    console.log('PDF generated successfully');
+    return pdfBuffer;
     
   } catch (error) {
     console.error('PDF generation error:', error);
-    throw new Error(`PDF generation failed: ${error.message}`);
+    
+    // Fallback: return HTML if PDF generation fails
+    try {
+      const templatePath = findTemplatePath();
+      const templateHtml = fs.readFileSync(templatePath, 'utf8');
+      const template = handlebars.compile(templateHtml);
+      const html = template(data);
+      console.log('Falling back to HTML output');
+      return Buffer.from(html, 'utf8');
+    } catch (fallbackError) {
+      throw new Error(`PDF generation failed: ${error.message}`);
+    }
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 

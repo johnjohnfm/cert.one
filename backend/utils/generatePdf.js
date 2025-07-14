@@ -6,10 +6,10 @@ const puppeteer = require('puppeteer');
 // Simple template path finder
 function findTemplatePath() {
   const paths = [
-    path.join(__dirname, '../templates/cert.hbs'),
-    path.join(__dirname, '../../templates/cert.hbs'),
-    path.join(process.cwd(), 'templates/cert.hbs'),
-    path.join(process.cwd(), 'backend/templates/cert.hbs')
+    path.join(__dirname, '../templates/CERTONEv3.hbs'),
+    path.join(__dirname, '../../templates/CERTONEv3.hbs'),
+    path.join(process.cwd(), 'templates/CERTONEv3.hbs'),
+    path.join(process.cwd(), 'backend/templates/CERTONEv3.hbs')
   ];
   
   for (const templatePath of paths) {

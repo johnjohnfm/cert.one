@@ -72,7 +72,8 @@ app.get('/test-pdf', async (req, res, next) => {
     };
     
     console.log('Test data:', testData);
-    const pdfBuffer = await generatePdf(testData);
+    const templateData = mapToTemplateFormat(testData);
+    const pdfBuffer = await generatePdf(templateData);
     
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
@@ -140,6 +141,22 @@ app.get('/', (req, res) => {
   });
 });
 
+// Helper function to map server variables to template variables
+function mapToTemplateFormat(data) {
+  return {
+    certificate_id: data.certificateId,
+    file_hash: data.fileHash,
+    timestamp: data.timestamp,
+    blockchain: data.blockchain,
+    verification_url: data.verificationLink,
+    user_name: data.userName,
+    email: data.email,
+    title: data.title,
+    file_name: data.fileName,
+    merkle_root: data.merkleRoot
+  };
+}
+
 // Original certificate endpoint (for JSON data)
 app.post('/certify', async (req, res, next) => {
   try {
@@ -175,7 +192,8 @@ app.post('/certify', async (req, res, next) => {
     };
 
     console.log('Generating PDF with data:', certData);
-    const pdfBuffer = await generatePdf(certData);
+    const templateData = mapToTemplateFormat(certData);
+    const pdfBuffer = await generatePdf(templateData);
 
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
@@ -244,7 +262,8 @@ app.post('/certify-text', async (req, res, next) => {
     }
     
     // Generate PDF certificate
-    const pdfBuffer = await generatePdf(certData);
+    const templateData = mapToTemplateFormat(certData);
+    const pdfBuffer = await generatePdf(templateData);
     
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
@@ -332,7 +351,8 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
     }
     
     // Generate PDF certificate
-    const pdfBuffer = await generatePdf(certData);
+    const templateData = mapToTemplateFormat(certData);
+    const pdfBuffer = await generatePdf(templateData);
     
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');

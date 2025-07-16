@@ -1,6 +1,10 @@
 # Use Node.js 18 Alpine as base image
 FROM node:18-alpine
 
+# Build argument to force cache invalidation
+ARG BUILD_DATE=2024-07-16
+ARG VERSION=1.0.0
+
 # Install Chromium and all required dependencies
 RUN apk add --no-cache \
     chromium \
@@ -13,21 +17,11 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     wget \
     curl \
     gnupg \
-    software-properties-common \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install OpenTimestamps CLI
-RUN wget -O /tmp/ots.tar.gz https://github.com/opentimestamps/opentimestamps-client/releases/download/v0.7.0/ots-v0.7.0-linux-amd64.tar.gz \
-    && tar -xzf /tmp/ots.tar.gz -C /tmp \
-    && mv /tmp/ots /usr/local/bin/ots \
-    && chmod +x /usr/local/bin/ots \
-    && rm /tmp/ots.tar.gz
-
-# Install Node.js dependencies
+    && rm -rf /var/cache/apk/*
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true \

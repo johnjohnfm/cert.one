@@ -145,6 +145,7 @@ app.get('/', (req, res) => {
 function mapToTemplateFormat(data) {
   return {
     certificate_id: data.certificateId,
+    certificate_number: data.certificateId, // Map certificateId to certificate_number
     file_hash: data.fileHash,
     timestamp: data.timestamp,
     blockchain: data.blockchain,
@@ -157,16 +158,41 @@ function mapToTemplateFormat(data) {
   };
 }
 
+// Debug endpoint to log JSON payload
+app.post('/debug-payload', (req, res) => {
+  console.log('=== DEBUG PAYLOAD ===');
+  console.log('Headers:', req.headers);
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('Body keys:', Object.keys(req.body));
+  console.log('====================');
+  
+  res.json({
+    received: true,
+    bodyKeys: Object.keys(req.body),
+    body: req.body
+  });
+});
+
 // Original certificate endpoint (for JSON data)
 app.post('/certify', async (req, res, next) => {
   try {
     console.log('Received certify request:', req.body);
     
+    // Flexible field extraction with fallbacks
+    const userName = req.body.userName || req.body.user_name || req.body.name;
+    const fileName = req.body.fileName || req.body.file_name || req.body.filename;
+    const fileHash = req.body.fileHash || req.body.file_hash || req.body.hash;
+    
     // Validate required fields
-    const { userName, fileName, fileHash } = req.body;
     if (!userName || !fileName || !fileHash) {
       return res.status(400).json({ 
-        error: 'Missing required fields: userName, fileName, fileHash' 
+        error: 'Missing required fields. Need: userName/user_name/name, fileName/file_name/filename, fileHash/file_hash/hash',
+        received: {
+          userName: !!userName,
+          fileName: !!fileName,
+          fileHash: !!fileHash
+        },
+        bodyKeys: Object.keys(req.body)
       });
     }
 
@@ -184,11 +210,11 @@ app.post('/certify', async (req, res, next) => {
       fileHash,
       email: req.body.email || '',
       title: req.body.title || 'Document Certificate',
-      certificateId: req.body.certificateId || generateCertificateId(fileHash),
+      certificateId: req.body.certificateId || req.body.certificate_id || generateCertificateId(fileHash),
       timestamp: req.body.timestamp || new Date().toISOString(),
       blockchain: req.body.blockchain || 'Bitcoin (OpenTimestamps)',
-      verificationLink: req.body.verificationLink || 'https://ots.tools/verify',
-      merkleRoot: req.body.merkleRoot || ''
+      verificationLink: req.body.verificationLink || req.body.verification_url || 'https://ots.tools/verify',
+      merkleRoot: req.body.merkleRoot || req.body.merkle_root || ''
     };
 
     console.log('Generating PDF with data:', certData);

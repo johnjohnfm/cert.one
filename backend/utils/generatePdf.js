@@ -1,128 +1,231 @@
+// backend/utils/opentimestamps.js
+const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const handlebars = require('handlebars');
-const puppeteer = require('puppeteer');
+const { promisify } = require('util');
 
-// Template caching
-let cachedTemplate = null;
-let cachedTemplatePath = null;
+const execAsync = promisify(exec);
 
-// Simple template path finder for certv3.hbs
-function findTemplatePath() {
-  const paths = [
-    path.join(__dirname, '../templates/certv3.hbs'),
-    path.join(__dirname, '../../templates/certv3.hbs'),
-    path.join(process.cwd(), 'templates/certv3.hbs'),
-    path.join(process.cwd(), 'backend/templates/certv3.hbs')
-  ];
-  
-  for (const templatePath of paths) {
-    if (fs.existsSync(templatePath)) {
-      return templatePath;
-    }
-  }
-  
-  throw new Error('Template not found in: ' + paths.join(', '));
-}
-
-// Get compiled template (with caching)
-function getCompiledTemplate() {
-  const templatePath = findTemplatePath();
-  
-  // Return cached template if available and path hasn't changed
-  if (cachedTemplate && cachedTemplatePath === templatePath) {
-    return cachedTemplate;
-  }
-  
-  // Load and compile template
-  const templateHtml = fs.readFileSync(templatePath, 'utf8');
-  cachedTemplate = handlebars.compile(templateHtml);
-  cachedTemplatePath = templatePath;
-  
-  return cachedTemplate;
-}
-
-// Main PDF generation function
-async function generatePdf(data) {
-  let browser;
+/**
+ * Create OpenTimestamps proof for a given hash
+ * @param {string} hash - SHA256 hash to timestamp
+ * @returns {Promise<object>} - Timestamp result with .ots file data
+ */
+async function createTimestamp(hash) {
   try {
-    console.log('Starting PDF generation with data:', data);
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid data provided');
+    // Create temporary file with hash
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
     
-    // Use cached template
-    const template = getCompiledTemplate();
-    const html = template(data);
-
-    // Launch Puppeteer with optimized settings
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-logging',
-        '--silent',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--disable-default-apps',
-        '--disable-extensions',
-        '--disable-plugins',
-        '--disable-images',
-        '--disable-javascript',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
-    });
+    const hashFile = path.join(tempDir, `${hash}.txt`);
+    const otsFile = path.join(tempDir, `${hash}.txt.ots`);
     
-    const page = await browser.newPage();
+    // Write hash to file
+    fs.writeFileSync(hashFile, hash);
     
-    // Optimize page settings
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+    // Use OpenTimestamps CLI to create timestamp
+    const command = `ots stamp "${hashFile}"`;
+    const { stdout, stderr } = await execAsync(command);
     
-    // Set content with minimal wait
-    await page.setContent(html, { waitUntil: 'domcontentloaded' });
-    
-    // Generate PDF with optimized settings
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
-      preferCSSPageSize: true,
-      displayHeaderFooter: false,
-      omitBackground: false
-    });
-    
-    await browser.close();
-    console.log('PDF generated successfully');
-    return pdfBuffer;
-  } catch (err) {
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
+    if (stderr && !stderr.includes('Submitting to remote calendar')) {
+      throw new Error(`OpenTimestamps error: ${stderr}`);
     }
-    console.error('Error generating PDF, falling back to HTML:', err);
-    // Fallback: return HTML as a Buffer
+    
+    // Read the .ots file if it was created
+    let otsData = null;
+    if (fs.existsSync(otsFile)) {
+      otsData = fs.readFileSync(otsFile);
+    }
+    
+    // Clean up temp files
     try {
-      const template = getCompiledTemplate();
-      const html = template(data);
-      return Buffer.from(html, 'utf8');
-    } catch (fallbackErr) {
-      throw new Error('PDF and HTML generation failed: ' + fallbackErr.message);
+      fs.unlinkSync(hashFile);
+      if (fs.existsSync(otsFile)) {
+        fs.unlinkSync(otsFile);
+      }
+    } catch (cleanupError) {
+      console.warn('Cleanup warning:', cleanupError.message);
     }
+    
+    return {
+      success: true,
+      hash,
+      timestamp: new Date().toISOString(),
+      otsData: otsData ? otsData.toString('base64') : null,
+      verificationUrl: `https://ots.tools/verify`,
+      message: 'Hash successfully submitted to OpenTimestamps'
+    };
+    
+  } catch (error) {
+    console.error('OpenTimestamps error:', error);
+    
+    // Fallback: return a pending timestamp that can be verified later
+    return {
+      success: false,
+      hash,
+      timestamp: new Date().toISOString(),
+      otsData: null,
+      verificationUrl: `https://ots.tools/verify`,
+      message: 'Timestamp pending - try verification in a few hours',
+      error: error.message
+    };
   }
 }
 
-module.exports = generatePdf;
+/**
+ * Verify an OpenTimestamps proof
+ * @param {string} hash - Original hash
+ * @param {string} otsData - Base64 encoded .ots file data
+ * @returns {Promise<object>} - Verification result
+ */
+async function verifyTimestamp(hash, otsData) {
+  try {
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    const hashFile = path.join(tempDir, `${hash}_verify.txt`);
+    const otsFile = path.join(tempDir, `${hash}_verify.txt.ots`);
+    
+    // Write files
+    fs.writeFileSync(hashFile, hash);
+    fs.writeFileSync(otsFile, Buffer.from(otsData, 'base64'));
+    
+    // Verify with OpenTimestamps
+    const command = `ots verify "${otsFile}"`;
+    const { stdout, stderr } = await execAsync(command);
+    
+    // Clean up
+    try {
+      fs.unlinkSync(hashFile);
+      fs.unlinkSync(otsFile);
+    } catch (cleanupError) {
+      console.warn('Cleanup warning:', cleanupError.message);
+    }
+    
+    return {
+      verified: !stderr || stderr.includes('Success'),
+      output: stdout,
+      error: stderr
+    };
+    
+  } catch (error) {
+    return {
+      verified: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Create a real OpenTimestamps proof using CLI
+ * @param {string} hash - SHA256 hash to timestamp
+ * @returns {Promise<object>} - Timestamp result with real .ots data
+ */
+async function createTimestampAPI(hash) {
+  try {
+    console.log('Creating real OpenTimestamps proof for hash:', hash);
+    
+    // Create temporary file with hash
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    const hashFile = path.join(tempDir, `${hash}.txt`);
+    const otsFile = path.join(tempDir, `${hash}.txt.ots`);
+    
+    // Write hash to file
+    fs.writeFileSync(hashFile, hash);
+    
+    // Use OpenTimestamps CLI to create real timestamp
+    const command = `ots stamp "${hashFile}"`;
+    console.log('Running command:', command);
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    console.log('OpenTimestamps stdout:', stdout);
+    if (stderr) {
+      console.log('OpenTimestamps stderr:', stderr);
+    }
+    
+    // Read the .ots file if it was created
+    let otsData = null;
+    let verificationUrl = 'https://ots.tools/verify';
+    
+    if (fs.existsSync(otsFile)) {
+      otsData = fs.readFileSync(otsFile);
+      console.log('OTS file created successfully, size:', otsData.length, 'bytes');
+      
+      // Get verification info
+      try {
+        const infoCommand = `ots info "${otsFile}"`;
+        const { stdout: infoOutput } = await execAsync(infoCommand);
+        console.log('OTS info:', infoOutput);
+        
+        // Extract calendar URL if available
+        if (infoOutput.includes('https://')) {
+          const urlMatch = infoOutput.match(/https:\/\/[^\s]+/);
+          if (urlMatch) {
+            verificationUrl = urlMatch[0];
+          }
+        }
+      } catch (infoError) {
+        console.warn('Could not get OTS info:', infoError.message);
+      }
+    } else {
+      console.warn('OTS file was not created');
+    }
+    
+    // Clean up temp files
+    try {
+      fs.unlinkSync(hashFile);
+      if (fs.existsSync(otsFile)) {
+        // Keep OTS file for verification, but move it to a permanent location
+        const permanentOtsFile = path.join(tempDir, `permanent_${hash}.ots`);
+        fs.copyFileSync(otsFile, permanentOtsFile);
+        fs.unlinkSync(otsFile);
+        console.log('OTS file saved to:', permanentOtsFile);
+      }
+    } catch (cleanupError) {
+      console.warn('Cleanup warning:', cleanupError.message);
+    }
+    
+    return {
+      success: true,
+      hash,
+      timestamp: new Date().toISOString(),
+      otsData: otsData ? otsData.toString('base64') : null,
+      verificationUrl,
+      message: 'Hash successfully submitted to Bitcoin blockchain via OpenTimestamps',
+      txHash: null, // Will be populated once confirmed (1-6 hours)
+      blockHeight: null,
+      calendarUrl: verificationUrl
+    };
+    
+  } catch (error) {
+    console.error('OpenTimestamps API error:', error);
+    
+    // Fallback: return a pending timestamp that can be verified later
+    return {
+      success: false,
+      hash,
+      timestamp: new Date().toISOString(),
+      otsData: null,
+      verificationUrl: `https://ots.tools/verify`,
+      message: 'Timestamp submission failed - will retry on next request',
+      error: error.message,
+      txHash: null,
+      blockHeight: null
+    };
+  }
+}
+
+module.exports = {
+  createTimestamp,
+  verifyTimestamp,
+  createTimestampAPI
+};

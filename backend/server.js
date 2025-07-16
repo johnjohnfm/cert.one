@@ -427,13 +427,64 @@ app.post('/verify', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid SHA256 hash format' });
     }
     
-    res.json({
+    let verificationResult = {
       hash,
-      verified: false, // Would implement actual verification logic here
+      verified: false,
       timestamp: new Date().toISOString(),
       verificationUrl: `https://ots.tools/verify`,
-      message: 'Hash received - verification functionality coming soon'
-    });
+      message: 'Verification not available'
+    };
+    
+    // If OTS data is provided, verify it
+    if (otsData) {
+      try {
+        const { verifyTimestamp } = require('./utils/opentimestamps');
+        const result = await verifyTimestamp(hash, otsData);
+        verificationResult = {
+          ...verificationResult,
+          verified: result.verified,
+          message: result.verified ? 'Hash verified on Bitcoin blockchain' : 'Hash verification failed',
+          details: result.output,
+          error: result.error
+        };
+      } catch (verifyError) {
+        verificationResult.error = verifyError.message;
+        verificationResult.message = 'Verification process failed';
+      }
+    } else {
+      // Check if we have a stored OTS file for this hash
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const tempDir = path.join(__dirname, 'temp');
+        const otsFile = path.join(tempDir, `permanent_${hash}.ots`);
+        
+        if (fs.existsSync(otsFile)) {
+          const { exec } = require('child_process');
+          const { promisify } = require('util');
+          const execAsync = promisify(exec);
+          
+          // Verify using stored OTS file
+          const command = `ots verify "${otsFile}"`;
+          const { stdout, stderr } = await execAsync(command);
+          
+          verificationResult = {
+            ...verificationResult,
+            verified: !stderr || stderr.includes('Success'),
+            message: !stderr || stderr.includes('Success') ? 'Hash verified on Bitcoin blockchain' : 'Hash verification failed',
+            details: stdout,
+            error: stderr
+          };
+        } else {
+          verificationResult.message = 'No timestamp proof found for this hash';
+        }
+      } catch (fileError) {
+        verificationResult.message = 'Could not check for stored timestamp proof';
+        verificationResult.error = fileError.message;
+      }
+    }
+    
+    res.json(verificationResult);
     
   } catch (err) {
     console.error('[ERROR] Verification failed:', err);

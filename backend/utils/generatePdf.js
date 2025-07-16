@@ -3,6 +3,10 @@ const path = require('path');
 const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
 
+// Template caching
+let cachedTemplate = null;
+let cachedTemplatePath = null;
+
 // Simple template path finder for certv3.hbs
 function findTemplatePath() {
   const paths = [
@@ -21,6 +25,23 @@ function findTemplatePath() {
   throw new Error('Template not found in: ' + paths.join(', '));
 }
 
+// Get compiled template (with caching)
+function getCompiledTemplate() {
+  const templatePath = findTemplatePath();
+  
+  // Return cached template if available and path hasn't changed
+  if (cachedTemplate && cachedTemplatePath === templatePath) {
+    return cachedTemplate;
+  }
+  
+  // Load and compile template
+  const templateHtml = fs.readFileSync(templatePath, 'utf8');
+  cachedTemplate = handlebars.compile(templateHtml);
+  cachedTemplatePath = templatePath;
+  
+  return cachedTemplate;
+}
+
 // Main PDF generation function
 async function generatePdf(data) {
   let browser;
@@ -29,13 +50,12 @@ async function generatePdf(data) {
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid data provided');
     }
-    const templatePath = findTemplatePath();
-    console.log('Using template at:', templatePath);
-    const templateHtml = fs.readFileSync(templatePath, 'utf8');
-    const template = handlebars.compile(templateHtml);
+    
+    // Use cached template
+    const template = getCompiledTemplate();
     const html = template(data);
 
-    // Launch Puppeteer and generate PDF
+    // Launch Puppeteer with optimized settings
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -44,18 +64,48 @@ async function generatePdf(data) {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-logging',
-        '--silent'
+        '--silent',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
       ],
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
     });
+    
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    // Optimize page settings
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+    
+    // Set content with minimal wait
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    
+    // Generate PDF with optimized settings
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
-      preferCSSPageSize: true
+      preferCSSPageSize: true,
+      displayHeaderFooter: false,
+      omitBackground: false
     });
+    
     await browser.close();
     console.log('PDF generated successfully');
     return pdfBuffer;
@@ -66,9 +116,7 @@ async function generatePdf(data) {
     console.error('Error generating PDF, falling back to HTML:', err);
     // Fallback: return HTML as a Buffer
     try {
-      const templatePath = findTemplatePath();
-      const templateHtml = fs.readFileSync(templatePath, 'utf8');
-      const template = handlebars.compile(templateHtml);
+      const template = getCompiledTemplate();
       const html = template(data);
       return Buffer.from(html, 'utf8');
     } catch (fallbackErr) {

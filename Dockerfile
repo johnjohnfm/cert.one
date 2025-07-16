@@ -12,6 +12,23 @@ RUN apk add --no-cache \
     ttf-freefont \
     && rm -rf /var/cache/apk/*
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    gnupg \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install OpenTimestamps CLI
+RUN wget -O /tmp/ots.tar.gz https://github.com/opentimestamps/opentimestamps-client/releases/download/v0.7.0/ots-v0.7.0-linux-amd64.tar.gz \
+    && tar -xzf /tmp/ots.tar.gz -C /tmp \
+    && mv /tmp/ots /usr/local/bin/ots \
+    && chmod +x /usr/local/bin/ots \
+    && rm /tmp/ots.tar.gz
+
+# Install Node.js dependencies
+
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \

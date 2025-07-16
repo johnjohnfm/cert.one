@@ -1,15 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
-const puppeteer = require('puppeteer');
 
-// Simple template path finder
+// Simple template path finder for certv3.hbs
 function findTemplatePath() {
   const paths = [
-    path.join(__dirname, '../templates/CERTONEv3.hbs'),
-    path.join(__dirname, '../../templates/CERTONEv3.hbs'),
-    path.join(process.cwd(), 'templates/CERTONEv3.hbs'),
-    path.join(process.cwd(), 'backend/templates/CERTONEv3.hbs')
+    path.join(__dirname, '../templates/certv3.hbs'),
+    path.join(__dirname, '../../templates/certv3.hbs'),
+    path.join(process.cwd(), 'templates/certv3.hbs'),
+    path.join(process.cwd(), 'backend/templates/certv3.hbs')
   ];
   
   for (const templatePath of paths) {
@@ -23,7 +22,6 @@ function findTemplatePath() {
 
 // Main PDF generation function
 async function generatePdf(data) {
-  let browser;
   try {
     console.log('Starting PDF generation with data:', data);
     
@@ -35,77 +33,16 @@ async function generatePdf(data) {
     // Load template
     const templatePath = findTemplatePath();
     console.log('Using template at:', templatePath);
-    
     const templateHtml = fs.readFileSync(templatePath, 'utf8');
-    console.log('Template loaded successfully');
-    
-    // Compile template
     const template = handlebars.compile(templateHtml);
     const html = template(data);
-    console.log('Template compiled successfully');
 
-    // Launch Puppeteer
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-logging',
-        '--silent'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
-    });
-    
-    const page = await browser.newPage();
-    
-    // Disable console output in the page
-    await page.evaluateOnNewDocument(() => {
-      console.log = () => {};
-      console.error = () => {};
-      console.warn = () => {};
-      console.info = () => {};
-    });
-    
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    
-    // Generate PDF
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '20px',
-        right: '20px',
-        bottom: '20px',
-        left: '20px'
-      },
-      preferCSSPageSize: true
-    });
-    
-    console.log('PDF generated successfully');
-    return pdfBuffer;
-    
-  } catch (error) {
-    console.error('PDF generation error:', error);
-    
-    // Fallback: return HTML if PDF generation fails
-    try {
-      const templatePath = findTemplatePath();
-      const templateHtml = fs.readFileSync(templatePath, 'utf8');
-      const template = handlebars.compile(templateHtml);
-      const html = template(data);
-      console.log('Falling back to HTML output');
-      return Buffer.from(html, 'utf8');
-    } catch (fallbackError) {
-      throw new Error(`PDF generation failed: ${error.message}`);
-    }
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
+    // Return HTML as a Buffer (for now, not PDF)
+    return Buffer.from(html, 'utf8');
+  } catch (err) {
+    console.error('Error generating PDF:', err);
+    throw err;
   }
 }
 
-// Export the function
 module.exports = generatePdf;

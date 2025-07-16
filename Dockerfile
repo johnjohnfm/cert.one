@@ -38,8 +38,7 @@ RUN echo "Chromium version:" && chromium-browser --version
 # Verify the server file exists
 RUN ls -la backend/ && echo "Server file exists: $(ls -la backend/server.js)"
 
-# Debug: print the contents of generatePdf.js
-RUN cat /app/backend/utils/generatePdf.js
+
 
 # Create a non-root user for security
 RUN addgroup -g 1001 -S nodejs && \

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
-const { PDFDocument, PDFName, PDFString } = require('pdf-lib'); // Add PDFName, PDFString
+const { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFDict } = require('pdf-lib'); // Add PDFRawStream, PDFDict
 
 // Template caching
 let cachedTemplate = null;
@@ -43,7 +43,53 @@ function getCompiledTemplate() {
   return cachedTemplate;
 }
 
-// Helper to set PDF metadata using pdf-lib, including custom fields
+// Helper to build XMP XML string
+function buildXmpXml({ title, author, subject, producer, creator, custom }) {
+  // Escape XML special chars
+  const esc = (str) => (str ? String(str).replace(/[<>&'"]/g, c => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
+  })[c]) : '');
+
+  // Custom fields as <rdf:Description> children
+  let customFields = '';
+  if (custom && typeof custom === 'object') {
+    for (const [key, value] of Object.entries(custom)) {
+      if (value !== undefined && value !== null) {
+        customFields += `      <certone:${esc(key)}>${esc(value)}</certone:${esc(key)}>\n`;
+      }
+    }
+  }
+
+  return `<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>\n` +
+`<x:xmpmeta xmlns:x='adobe:ns:meta/' xmlns:certone='https://cert.one/schema/'>\n` +
+`  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n` +
+`    <rdf:Description rdf:about='' xmlns:dc='http://purl.org/dc/elements/1.1/'>\n` +
+`      <dc:title><rdf:Alt><rdf:li xml:lang='x-default'>${esc(title)}</rdf:li></rdf:Alt></dc:title>\n` +
+`      <dc:creator><rdf:Seq><rdf:li>${esc(author)}</rdf:li></rdf:Seq></dc:creator>\n` +
+`      <dc:description><rdf:Alt><rdf:li xml:lang='x-default'>${esc(subject)}</rdf:li></rdf:Alt></dc:description>\n` +
+`      <dc:publisher><rdf:Seq><rdf:li>${esc(producer)}</rdf:li></rdf:Seq></dc:publisher>\n` +
+`      <dc:contributor><rdf:Seq><rdf:li>${esc(creator)}</rdf:li></rdf:Seq></dc:contributor>\n` +
+customFields +
+`    </rdf:Description>\n` +
+`  </rdf:RDF>\n` +
+`</x:xmpmeta>\n` +
+`<?xpacket end='w'?>`;
+}
+
+// Helper to inject XMP metadata into PDF
+async function injectXmpMetadata(pdfDoc, xmpXml) {
+  const xmpBytes = Buffer.from(xmpXml, 'utf8');
+  const xmpStream = pdfDoc.context.flateStream(xmpBytes, {
+    Type: PDFName.of('Metadata'),
+    Subtype: PDFName.of('XML'),
+  });
+  const xmpRef = pdfDoc.context.register(xmpStream);
+
+  // Set /Metadata entry in the PDF catalog
+  pdfDoc.catalog.set(PDFName.of('Metadata'), xmpRef);
+}
+
+// Helper to set PDF metadata using pdf-lib, including custom fields and XMP
 async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, creator, custom }) {
   const pdfDoc = await PDFDocument.load(pdfBuffer);
   if (title) pdfDoc.setTitle(title);
@@ -53,23 +99,22 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
   if (creator) pdfDoc.setCreator(creator);
 
   // Embed custom metadata fields for notarization/blockchain in the Info dictionary
+  const keyMap = {
+    file_hash: 'FileHash',
+    fileHash: 'FileHash',
+    certificate_id: 'CertificateId',
+    certificateId: 'CertificateId',
+    certificate_number: 'CertificateNumber',
+    merkle_root: 'MerkleRoot',
+    blockchain: 'Blockchain',
+    verification_url: 'VerificationUrl',
+    verificationLink: 'VerificationUrl',
+    cid: 'Cid',
+    block_id: 'BlockId',
+    ipfs_cid: 'IpfsCid',
+    // Add more mappings as needed
+  };
   if (custom && typeof custom === 'object') {
-    // Map of input keys to capitalized/camel-case PDF keys
-    const keyMap = {
-      file_hash: 'FileHash',
-      fileHash: 'FileHash',
-      certificate_id: 'CertificateId',
-      certificateId: 'CertificateId',
-      certificate_number: 'CertificateNumber',
-      merkle_root: 'MerkleRoot',
-      blockchain: 'Blockchain',
-      verification_url: 'VerificationUrl',
-      verificationLink: 'VerificationUrl',
-      cid: 'Cid',
-      block_id: 'BlockId',
-      ipfs_cid: 'IpfsCid',
-      // Add more mappings as needed
-    };
     for (const [key, value] of Object.entries(custom)) {
       if (value !== undefined && value !== null) {
         const pdfKey = keyMap[key] || key;
@@ -77,6 +122,10 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
       }
     }
   }
+
+  // --- XMP Injection ---
+  const xmpXml = buildXmpXml({ title, author, subject, producer, creator, custom });
+  await injectXmpMetadata(pdfDoc, xmpXml);
 
   return await pdfDoc.save();
 }

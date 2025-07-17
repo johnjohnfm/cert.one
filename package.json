@@ -18,7 +18,8 @@
     "form-data": "^4.0.0",
     "node-fetch": "^2.7.0",
     "dotenv": "^16.0.3",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
@@ -27,7 +28,7 @@
     "node": ">=16"
   },
   "author": "JOHNJOHNFM, LLC",
-  "license": "MIT",
+  "license": "CUSTOM",
   "keywords": [
     "blockchain",
     "certificate",

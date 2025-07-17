@@ -306,8 +306,8 @@ async function generatePdf(data) {
     // Correct qpdf syntax for encryption with permissions
     const qpdfArgs = [
       '--encrypt', password, password, '256',
-      '--print=full', '--extract=y', '--annotate=y',
-      '--modify=none', '--form=none', '--assembly=none',
+      '--print=y', '--extract=y', '--annotate=y',
+      '--modify=n', '--form=n', '--assembly=n',
       '--', inputPath, outputPath
     ];
     

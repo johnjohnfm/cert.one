@@ -16,7 +16,8 @@ RUN apk add --no-cache \
     ttf-freefont \
     wget \
     curl \
-    gnupg
+    gnupg \
+    qpdf
 
 # ---- Puppeteer/Chromium environment variables ----
 ENV PUPPETEER_SKIP_DOWNLOAD=true \

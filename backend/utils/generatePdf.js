@@ -281,7 +281,10 @@ async function generatePdf(data) {
     let finalPdfBuffer = await setPdfMetadata(pdfBuffer, meta);
 
     // --- Encrypt PDF as the last step using qpdf CLI ---
-    const password = crypto.randomBytes(12).toString('base64url');
+    // Use an empty user password so the PDF opens without prompting while
+    // still applying permission restrictions. A random owner password is used
+    // to prevent modification of restrictions.
+    const ownerPassword = crypto.randomBytes(12).toString('base64url');
     const tmpDir = os.tmpdir();
     const inputPath = path.join(tmpDir, `certone-in-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
     const outputPath = path.join(tmpDir, `certone-out-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
@@ -290,7 +293,7 @@ async function generatePdf(data) {
     // Correct qpdf syntax for encryption with permissions
     // qpdf --encrypt <user> <owner> 256 --print=full --extract=y --annotate=y --modify=none -- <in> <out>
     const qpdfArgs = [
-      '--encrypt', password, password, '256',
+      '--encrypt', '', ownerPassword, '256',
       '--print=full', '--extract=y', '--annotate=y',
       '--modify=none',
       '--', inputPath, outputPath

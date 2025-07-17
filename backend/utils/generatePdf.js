@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
+const { PDFDocument } = require('pdf-lib'); // Add this at the top
 
 // Template caching
 let cachedTemplate = null;
@@ -40,6 +41,17 @@ function getCompiledTemplate() {
   cachedTemplatePath = templatePath;
   
   return cachedTemplate;
+}
+
+// Helper to set PDF metadata using pdf-lib
+async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, creator }) {
+  const pdfDoc = await PDFDocument.load(pdfBuffer);
+  if (title) pdfDoc.setTitle(title);
+  if (author) pdfDoc.setAuthor(author);
+  if (subject) pdfDoc.setSubject(subject);
+  if (producer) pdfDoc.setProducer(producer);
+  if (creator) pdfDoc.setCreator(creator);
+  return await pdfDoc.save();
 }
 
 // Main PDF generation function
@@ -108,7 +120,17 @@ async function generatePdf(data) {
     
     await browser.close();
     console.log('PDF generated successfully');
-    return pdfBuffer;
+
+    // --- Set professional PDF metadata using pdf-lib ---
+    const meta = {
+      title: data.title || 'Blockchain Certificate',
+      author: 'CERT.ONE by JOHNJOHNFM, LLC.',
+      subject: 'Blockchain Certificate of Authenticity',
+      producer: 'CERT.ONE Certificate Generator',
+      creator: 'CERT.ONE Backend (Node.js, Puppeteer, pdf-lib)'
+    };
+    const finalPdfBuffer = await setPdfMetadata(pdfBuffer, meta);
+    return finalPdfBuffer;
   } catch (err) {
     if (browser) {
       try { await browser.close(); } catch (e) {}

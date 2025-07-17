@@ -85,8 +85,9 @@ async function injectXmpMetadata(pdfDoc, xmpXml) {
   });
   const xmpRef = pdfDoc.context.register(xmpStream);
 
-  // Set /Metadata entry in the PDF catalog
-  pdfDoc.catalog.set(PDFName.of('Metadata'), xmpRef);
+  // Set /Metadata entry in the PDF catalog (handle both property and function)
+  const catalog = typeof pdfDoc.catalog === 'function' ? pdfDoc.catalog() : pdfDoc.catalog;
+  catalog.set(PDFName.of('Metadata'), xmpRef);
 }
 
 // Helper to set PDF metadata using pdf-lib, including custom fields and XMP

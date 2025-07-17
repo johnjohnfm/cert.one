@@ -116,27 +116,50 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
     // Add more mappings as needed
   };
   if (custom && typeof custom === 'object') {
-    // Ensure /Info dictionary exists
-    let infoRef = pdfDoc.context.trailer.get(PDFName.of('Info'));
-    let infoDict;
-    if (!infoRef) {
-      infoDict = pdfDoc.context.obj({});
-      infoRef = pdfDoc.context.register(infoDict);
-      pdfDoc.context.trailer.set(PDFName.of('Info'), infoRef);
-    } else {
-      infoDict = pdfDoc.context.lookup(infoRef, PDFDict);
-    }
-    for (const [key, value] of Object.entries(custom)) {
-      if (value !== undefined && value !== null) {
-        const pdfKey = keyMap[key] || key;
-        infoDict.set(PDFName.of(pdfKey), PDFString.of(String(value)));
+    try {
+      // Ensure /Info dictionary exists
+      let infoRef = pdfDoc.context.trailer.get(PDFName.of('Info'));
+      let infoDict;
+      if (!infoRef) {
+        infoDict = pdfDoc.context.obj({});
+        infoRef = pdfDoc.context.register(infoDict);
+        pdfDoc.context.trailer.set(PDFName.of('Info'), infoRef);
+      } else {
+        infoDict = pdfDoc.context.lookup(infoRef, PDFDict);
+        // If lookup fails, create a new dictionary
+        if (!infoDict) {
+          console.log('Info dictionary lookup failed, creating new one');
+          infoDict = pdfDoc.context.obj({});
+          infoRef = pdfDoc.context.register(infoDict);
+          pdfDoc.context.trailer.set(PDFName.of('Info'), infoRef);
+        }
       }
+      
+      // Set custom metadata fields with error handling
+      for (const [key, value] of Object.entries(custom)) {
+        if (value !== undefined && value !== null) {
+          try {
+            const pdfKey = keyMap[key] || key;
+            infoDict.set(PDFName.of(pdfKey), PDFString.of(String(value)));
+          } catch (fieldError) {
+            console.warn(`Failed to set metadata field ${key}:`, fieldError.message);
+          }
+        }
+      }
+    } catch (metadataError) {
+      console.warn('Failed to set custom metadata:', metadataError.message);
+      // Continue without custom metadata rather than failing completely
     }
   }
 
   // --- XMP Injection ---
-  const xmpXml = buildXmpXml({ title, author, subject, producer, creator, custom });
-  await injectXmpMetadata(pdfDoc, xmpXml);
+  try {
+    const xmpXml = buildXmpXml({ title, author, subject, producer, creator, custom });
+    await injectXmpMetadata(pdfDoc, xmpXml);
+  } catch (xmpError) {
+    console.warn('Failed to inject XMP metadata:', xmpError.message);
+    // Continue without XMP metadata rather than failing completely
+  }
 
   return await pdfDoc.save();
 }

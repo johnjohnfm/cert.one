@@ -3,6 +3,7 @@ const path = require('path');
 const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
 const { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFDict } = require('pdf-lib'); // Add PDFRawStream, PDFDict
+const crypto = require('crypto'); // Add at the top for password generation
 
 // Template caching
 let cachedTemplate = null;
@@ -289,8 +290,30 @@ async function generatePdf(data) {
         // Add any other notarization-relevant fields here
       }
     };
-    const finalPdfBuffer = await setPdfMetadata(pdfBuffer, meta);
-    return finalPdfBuffer;
+    let finalPdfBuffer = await setPdfMetadata(pdfBuffer, meta);
+
+    // --- Encrypt PDF as the last step ---
+    // Generate a secure random password (12 bytes, base64url)
+    const password = crypto.randomBytes(12).toString('base64url');
+    // Load PDF again for encryption
+    const pdfDoc = await PDFDocument.load(finalPdfBuffer);
+    await pdfDoc.encrypt({
+      userPassword: password,
+      ownerPassword: password, // You may use a different owner password if desired
+      permissions: {
+        printing: 'highResolution', // Printing allowed
+        modifying: false,
+        copying: true, // Copying allowed
+        annotating: true, // Annotations/Signatures allowed
+        fillingForms: false,
+        contentAccessibility: true, // Text extraction allowed
+        documentAssembly: false
+      }
+    });
+    finalPdfBuffer = await pdfDoc.save();
+
+    // Return both the PDF buffer and the password
+    return { pdfBuffer: finalPdfBuffer, password };
   } catch (err) {
     if (browser) {
       try { await browser.close(); } catch (e) {}
@@ -300,7 +323,7 @@ async function generatePdf(data) {
     try {
       const template = getCompiledTemplate();
       const html = template(data);
-      return Buffer.from(html, 'utf8');
+      return { pdfBuffer: Buffer.from(html, 'utf8'), password: null };
     } catch (fallbackErr) {
       throw new Error('PDF and HTML generation failed: ' + fallbackErr.message);
     }

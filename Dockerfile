@@ -40,6 +40,9 @@ RUN mkdir -p /app/.cache/puppeteer
 # ---- Verify Chromium installation ----
 RUN echo "Chromium version:" && chromium-browser --version
 
+# ---- Verify qpdf installation and syntax ----
+RUN echo "qpdf version:" && qpdf --version && echo "qpdf help:" && qpdf --help=usage | head -20
+
 # ---- Verify backend/server.js exists ----
 RUN ls -la backend/ && echo "Server file exists: $(ls -la backend/server.js)"
 
@@ -55,4 +58,4 @@ USER nodejs
 EXPOSE 3000
 
 # ---- Start the application ----
-CMD ["node", "backend/server.js"] 
+CMD ["node", "backend/server.js"]

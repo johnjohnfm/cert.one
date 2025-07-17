@@ -150,24 +150,8 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
   };
   if (custom && typeof custom === 'object') {
     try {
-      // Ensure /Info dictionary exists
-      let infoRef = pdfDoc.context.trailer.get(PDFName.of('Info'));
-      let infoDict;
-      if (!infoRef) {
-        infoDict = pdfDoc.context.obj({});
-        infoRef = pdfDoc.context.register(infoDict);
-        pdfDoc.context.trailer.set(PDFName.of('Info'), infoRef);
-      } else {
-        infoDict = pdfDoc.context.lookup(infoRef, PDFDict);
-        // If lookup fails, create a new dictionary
-        if (!infoDict) {
-          console.log('Info dictionary lookup failed, creating new one');
-          infoDict = pdfDoc.context.obj({});
-          infoRef = pdfDoc.context.register(infoDict);
-          pdfDoc.context.trailer.set(PDFName.of('Info'), infoRef);
-        }
-      }
-      
+      const infoDict = pdfDoc.getInfoDict();
+
       // Set custom metadata fields with error handling
       for (const [key, value] of Object.entries(custom)) {
         if (value !== undefined && value !== null) {
@@ -304,10 +288,11 @@ async function generatePdf(data) {
     fs.writeFileSync(inputPath, finalPdfBuffer);
     
     // Correct qpdf syntax for encryption with permissions
+    // qpdf --encrypt <user> <owner> 256 --print=full --extract=y --annotate=y --modify=none -- <in> <out>
     const qpdfArgs = [
       '--encrypt', password, password, '256',
       '--print=full', '--extract=y', '--annotate=y',
-      '--modify=n', '--form=n', '--assembly=n',
+      '--modify=none',
       '--', inputPath, outputPath
     ];
     

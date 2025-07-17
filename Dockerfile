@@ -1,11 +1,11 @@
-# Use Node.js 18 Alpine as base image
+# ---- Base image ----
 FROM node:18-alpine
 
-# Build argument to force cache invalidation
-ARG BUILD_DATE=2024-07-16
-ARG VERSION=1.0.0
+# ---- Build arguments (for cache busting/versioning) ----
+ARG BUILD_DATE
+ARG VERSION
 
-# Install Chromium and all required dependencies
+# ---- Install system dependencies for Puppeteer/Chromium ----
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -14,55 +14,44 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    && rm -rf /var/cache/apk/*
-
-# Install system dependencies
-RUN apk add --no-cache \
     wget \
     curl \
-    gnupg \
-    && rm -rf /var/cache/apk/*
+    gnupg
 
-# Set environment variables for Puppeteer
+# ---- Puppeteer/Chromium environment variables ----
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
     PUPPETEER_DISABLE_HEADLESS_WARNING=true
 
-# Create app directory
+# ---- Set working directory ----
 WORKDIR /app
 
-# Copy package files first for better caching
+# ---- Copy package files and install only production dependencies ----
 COPY package*.json ./
+RUN npm ci --only=production
 
-# Install dependencies
-RUN npm install --production
-
-# Copy application code
+# ---- Copy application code ----
 COPY . .
 
-# Create cache directory for Puppeteer
+# ---- Create Puppeteer cache directory ----
 RUN mkdir -p /app/.cache/puppeteer
 
-# Verify Chromium installation
+# ---- Verify Chromium installation ----
 RUN echo "Chromium version:" && chromium-browser --version
 
-# Verify the server file exists
+# ---- Verify backend/server.js exists ----
 RUN ls -la backend/ && echo "Server file exists: $(ls -la backend/server.js)"
 
-
-
-# Create a non-root user for security
+# ---- Create non-root user for security ----
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
 
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
+# ---- Switch to non-root user ----
 USER nodejs
 
-# Expose port
+# ---- Expose port ----
 EXPOSE 3000
 
-# Start the application with debugging
+# ---- Start the application ----
 CMD ["node", "backend/server.js"] 

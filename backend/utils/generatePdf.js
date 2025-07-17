@@ -69,7 +69,7 @@ function buildXmpXml({ title, author, subject, producer, creator, custom, creati
     }
   }
 
-  // Format field (if provided)
+  // Format field (if provided) - use PDF/A format specification
   const formatField = format ? `      <dc:format>${esc(format)}</dc:format>\n` : '';
 
   return `<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>\n` +
@@ -85,7 +85,7 @@ formatField +
 `      <xmp:CreateDate>${formatXmpDate(creationDate)}</xmp:CreateDate>\n` +
 `      <xmp:ModifyDate>${formatXmpDate(modificationDate)}</xmp:ModifyDate>\n` +
 `      <xmpRights:Marked>True</xmpRights:Marked>\n` +
-`      <xmpRights:WebStatement>© 2025 CERT.ONE | JOHNJOHNFM, LLC. All rights reserved.</xmpRights:WebStatement>\n` +
+`      <xmpRights:CopyrightNotice>© 2025 CERT.ONE | JOHNJOHNFM, LLC. All rights reserved.</xmpRights:CopyrightNotice>\n` +
 customFields +
 `    </rdf:Description>\n` +
 `  </rdf:RDF>\n` +
@@ -126,7 +126,7 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
   // Extract metadata for XMP (autofill values)
   const creationDate = now;
   const modificationDate = now;
-  const format = 'application/pdf'; // PDF format
+  const format = 'PDF-1.7'; // PDF format version
 
   // Embed custom metadata fields for notarization/blockchain in the Info dictionary
   const keyMap = {

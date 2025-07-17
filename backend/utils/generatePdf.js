@@ -118,7 +118,11 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
     for (const [key, value] of Object.entries(custom)) {
       if (value !== undefined && value !== null) {
         const pdfKey = keyMap[key] || key;
-        pdfDoc.context.trailerInfo.set(PDFName.of(pdfKey), PDFString.of(String(value)));
+        const infoRef = pdfDoc.context.trailer.get(PDFName.of('Info'));
+        if (infoRef) {
+          const infoDict = pdfDoc.context.lookup(infoRef, PDFDict);
+          infoDict.set(PDFName.of(pdfKey), PDFString.of(String(value)));
+        }
       }
     }
   }

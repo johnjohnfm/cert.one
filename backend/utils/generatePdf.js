@@ -52,7 +52,7 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
   if (producer) pdfDoc.setProducer(producer);
   if (creator) pdfDoc.setCreator(creator);
 
-  // Embed custom metadata fields for notarization/blockchain in the Info dictionary
+  // Embed custom metadata fields for notarization/blockchain
   if (custom && typeof custom === 'object') {
     for (const [key, value] of Object.entries(custom)) {
       if (value) {

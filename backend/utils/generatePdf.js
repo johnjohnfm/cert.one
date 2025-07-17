@@ -43,14 +43,24 @@ function getCompiledTemplate() {
   return cachedTemplate;
 }
 
-// Helper to set PDF metadata using pdf-lib
-async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, creator }) {
+// Helper to set PDF metadata using pdf-lib, including custom fields
+async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, creator, custom }) {
   const pdfDoc = await PDFDocument.load(pdfBuffer);
   if (title) pdfDoc.setTitle(title);
   if (author) pdfDoc.setAuthor(author);
   if (subject) pdfDoc.setSubject(subject);
   if (producer) pdfDoc.setProducer(producer);
   if (creator) pdfDoc.setCreator(creator);
+
+  // Embed custom metadata fields for notarization/blockchain
+  if (custom && typeof custom === 'object') {
+    for (const [key, value] of Object.entries(custom)) {
+      if (value !== undefined && value !== null) {
+        // pdf-lib sets custom metadata as info dict entries
+        pdfDoc.setCustomMetadata(key, String(value));
+      }
+    }
+  }
   return await pdfDoc.save();
 }
 
@@ -123,11 +133,23 @@ async function generatePdf(data) {
 
     // --- Set professional PDF metadata using pdf-lib ---
     const meta = {
-      title: data.title || 'Blockchain Certificate',
+      title: 'Blockchain Certificate', // Always fixed
       author: 'CERT.ONE by JOHNJOHNFM, LLC.',
       subject: 'Blockchain Certificate of Authenticity',
       producer: 'CERT.ONE Certificate Generator',
-      creator: 'CERT.ONE Backend (Node.js, Puppeteer, pdf-lib)'
+      creator: 'CERT.ONE Backend (Node.js, Puppeteer, pdf-lib)',
+      custom: {
+        file_hash: data.file_hash || data.fileHash,
+        certificate_id: data.certificate_id || data.certificateId,
+        certificate_number: data.certificate_number,
+        merkle_root: data.merkle_root,
+        blockchain: data.blockchain,
+        verification_url: data.verification_url || data.verificationLink,
+        cid: data.cid,
+        block_id: data.block_id,
+        ipfs_cid: data.ipfs_cid,
+        // Add any other notarization-relevant fields here
+      }
     };
     const finalPdfBuffer = await setPdfMetadata(pdfBuffer, meta);
     return finalPdfBuffer;

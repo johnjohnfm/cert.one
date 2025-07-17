@@ -4,6 +4,10 @@ const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
 const { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFDict } = require('pdf-lib'); // Add PDFRawStream, PDFDict
 const crypto = require('crypto'); // Add at the top for password generation
+const os = require('os');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 // Template caching
 let cachedTemplate = null;
@@ -292,28 +296,31 @@ async function generatePdf(data) {
     };
     let finalPdfBuffer = await setPdfMetadata(pdfBuffer, meta);
 
-    // --- Encrypt PDF as the last step ---
-    // Generate a secure random password (12 bytes, base64url)
+    // --- Encrypt PDF as the last step using qpdf CLI ---
     const password = crypto.randomBytes(12).toString('base64url');
-    // Load PDF again for encryption
-    const pdfDoc = await PDFDocument.load(finalPdfBuffer);
-    await pdfDoc.encrypt({
-      userPassword: password,
-      ownerPassword: password, // You may use a different owner password if desired
-      permissions: {
-        printing: 'highResolution', // Printing allowed
-        modifying: false,
-        copying: true, // Copying allowed
-        annotating: true, // Annotations/Signatures allowed
-        fillingForms: false,
-        contentAccessibility: true, // Text extraction allowed
-        documentAssembly: false
-      }
-    });
-    finalPdfBuffer = await pdfDoc.save();
-
-    // Return both the PDF buffer and the password
-    return { pdfBuffer: finalPdfBuffer, password };
+    const tmpDir = os.tmpdir();
+    const inputPath = path.join(tmpDir, `certone-in-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+    const outputPath = path.join(tmpDir, `certone-out-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+    fs.writeFileSync(inputPath, finalPdfBuffer);
+    // Permissions: allow=print,extract,annotate (modifying/fillingForms/documentAssembly not allowed)
+    const qpdfArgs = [
+      '--encrypt', password, password, '256',
+      '--', inputPath, outputPath,
+      '--allow=print', '--allow=extract', '--allow=annotate'
+    ];
+    try {
+      await execFileAsync('qpdf', qpdfArgs);
+      const encryptedBuffer = fs.readFileSync(outputPath);
+      // Clean up temp files
+      fs.unlinkSync(inputPath);
+      fs.unlinkSync(outputPath);
+      return { pdfBuffer: encryptedBuffer, password };
+    } catch (qpdfErr) {
+      // Clean up temp files if they exist
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      throw new Error('PDF encryption failed: ' + qpdfErr.message);
+    }
   } catch (err) {
     if (browser) {
       try { await browser.close(); } catch (e) {}

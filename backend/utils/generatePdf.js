@@ -115,14 +115,20 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
     // Add more mappings as needed
   };
   if (custom && typeof custom === 'object') {
+    // Ensure /Info dictionary exists
+    let infoRef = pdfDoc.context.trailer.get(PDFName.of('Info'));
+    let infoDict;
+    if (!infoRef) {
+      infoDict = pdfDoc.context.obj({});
+      infoRef = pdfDoc.context.register(infoDict);
+      pdfDoc.context.trailer.set(PDFName.of('Info'), infoRef);
+    } else {
+      infoDict = pdfDoc.context.lookup(infoRef, PDFDict);
+    }
     for (const [key, value] of Object.entries(custom)) {
       if (value !== undefined && value !== null) {
         const pdfKey = keyMap[key] || key;
-        const infoRef = pdfDoc.context.trailer.get(PDFName.of('Info'));
-        if (infoRef) {
-          const infoDict = pdfDoc.context.lookup(infoRef, PDFDict);
-          infoDict.set(PDFName.of(pdfKey), PDFString.of(String(value)));
-        }
+        infoDict.set(PDFName.of(pdfKey), PDFString.of(String(value)));
       }
     }
   }
@@ -189,7 +195,7 @@ async function generatePdf(data) {
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
     
     // Generate PDF with optimized settings
-    const pdfBuffer = await page.pdf({
+    const pdfBuffer = await page.pdf({ 
       format: 'A4',
       printBackground: true,
       margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },

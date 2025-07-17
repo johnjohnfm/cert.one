@@ -302,19 +302,22 @@ async function generatePdf(data) {
     const inputPath = path.join(tmpDir, `certone-in-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
     const outputPath = path.join(tmpDir, `certone-out-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
     fs.writeFileSync(inputPath, finalPdfBuffer);
-    // Permissions: allow=print,extract,annotate (modifying/fillingForms/documentAssembly not allowed)
+    
+    // Correct qpdf syntax for encryption with permissions
     const qpdfArgs = [
       '--encrypt', password, password, '256',
-      '--', inputPath, outputPath,
-      '--allow=print', '--allow=extract', '--allow=annotate'
+      '--print=full', '--extract=y', '--annotate=y',
+      '--modify=none', '--form=none', '--assembly=none',
+      '--', inputPath, outputPath
     ];
+    
     try {
       await execFileAsync('qpdf', qpdfArgs);
       const encryptedBuffer = fs.readFileSync(outputPath);
       // Clean up temp files
       fs.unlinkSync(inputPath);
       fs.unlinkSync(outputPath);
-      return { pdfBuffer: encryptedBuffer, password };
+      return encryptedBuffer; // Return just the buffer for compatibility
     } catch (qpdfErr) {
       // Clean up temp files if they exist
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
@@ -330,7 +333,7 @@ async function generatePdf(data) {
     try {
       const template = getCompiledTemplate();
       const html = template(data);
-      return { pdfBuffer: Buffer.from(html, 'utf8'), password: null };
+      return Buffer.from(html, 'utf8');
     } catch (fallbackErr) {
       throw new Error('PDF and HTML generation failed: ' + fallbackErr.message);
     }

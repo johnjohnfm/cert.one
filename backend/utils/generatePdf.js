@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
 const puppeteer = require('puppeteer');
-const { PDFDocument } = require('pdf-lib'); // Add this at the top
+const { PDFDocument, PDFName, PDFString } = require('pdf-lib'); // Add PDFName, PDFString
 
 // Template caching
 let cachedTemplate = null;
@@ -52,15 +52,15 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
   if (producer) pdfDoc.setProducer(producer);
   if (creator) pdfDoc.setCreator(creator);
 
-  // Embed custom metadata fields for notarization/blockchain
+  // Embed custom metadata fields for notarization/blockchain in the Info dictionary
   if (custom && typeof custom === 'object') {
     for (const [key, value] of Object.entries(custom)) {
-      if (value !== undefined && value !== null) {
-        // pdf-lib sets custom metadata as info dict entries
-        pdfDoc.setCustomMetadata(key, String(value));
+      if (value) {
+        pdfDoc.context.trailerInfo.set(PDFName.of(key), PDFString.of(String(value)));
       }
     }
   }
+
   return await pdfDoc.save();
 }
 

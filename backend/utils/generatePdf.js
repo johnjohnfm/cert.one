@@ -52,11 +52,28 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
   if (producer) pdfDoc.setProducer(producer);
   if (creator) pdfDoc.setCreator(creator);
 
-  // Embed custom metadata fields for notarization/blockchain
+  // Embed custom metadata fields for notarization/blockchain in the Info dictionary
   if (custom && typeof custom === 'object') {
+    // Map of input keys to capitalized/camel-case PDF keys
+    const keyMap = {
+      file_hash: 'FileHash',
+      fileHash: 'FileHash',
+      certificate_id: 'CertificateId',
+      certificateId: 'CertificateId',
+      certificate_number: 'CertificateNumber',
+      merkle_root: 'MerkleRoot',
+      blockchain: 'Blockchain',
+      verification_url: 'VerificationUrl',
+      verificationLink: 'VerificationUrl',
+      cid: 'Cid',
+      block_id: 'BlockId',
+      ipfs_cid: 'IpfsCid',
+      // Add more mappings as needed
+    };
     for (const [key, value] of Object.entries(custom)) {
-      if (value) {
-        pdfDoc.context.trailerInfo.set(PDFName.of(key), PDFString.of(String(value)));
+      if (value !== undefined && value !== null) {
+        const pdfKey = keyMap[key] || key;
+        pdfDoc.context.trailerInfo.set(PDFName.of(pdfKey), PDFString.of(String(value)));
       }
     }
   }

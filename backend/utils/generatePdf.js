@@ -44,11 +44,19 @@ function getCompiledTemplate() {
 }
 
 // Helper to build XMP XML string
-function buildXmpXml({ title, author, subject, producer, creator, custom }) {
+function buildXmpXml({ title, author, subject, producer, creator, custom, creationDate, modificationDate, format }) {
   // Escape XML special chars
   const esc = (str) => (str ? String(str).replace(/[<>&'"]/g, c => ({
     '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
   })[c]) : '');
+
+  // Format dates for XMP (ISO 8601 format)
+  const formatXmpDate = (date) => {
+    if (!date) return new Date().toISOString();
+    if (date instanceof Date) return date.toISOString();
+    if (typeof date === 'string') return date;
+    return new Date().toISOString();
+  };
 
   // Custom fields as <rdf:Description> children
   let customFields = '';
@@ -60,15 +68,23 @@ function buildXmpXml({ title, author, subject, producer, creator, custom }) {
     }
   }
 
+  // Format field (if provided)
+  const formatField = format ? `      <dc:format>${esc(format)}</dc:format>\n` : '';
+
   return `<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>\n` +
 `<x:xmpmeta xmlns:x='adobe:ns:meta/' xmlns:certone='https://cert.one/schema/'>\n` +
 `  <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n` +
-`    <rdf:Description rdf:about='' xmlns:dc='http://purl.org/dc/elements/1.1/'>\n` +
+`    <rdf:Description rdf:about='' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:xmp='http://ns.adobe.com/xap/1.0/' xmlns:xmpRights='http://ns.adobe.com/xap/1.0/rights/'>\n` +
 `      <dc:title><rdf:Alt><rdf:li xml:lang='x-default'>${esc(title)}</rdf:li></rdf:Alt></dc:title>\n` +
 `      <dc:creator><rdf:Seq><rdf:li>${esc(author)}</rdf:li></rdf:Seq></dc:creator>\n` +
 `      <dc:description><rdf:Alt><rdf:li xml:lang='x-default'>${esc(subject)}</rdf:li></rdf:Alt></dc:description>\n` +
 `      <dc:publisher><rdf:Seq><rdf:li>${esc(producer)}</rdf:li></rdf:Seq></dc:publisher>\n` +
 `      <dc:contributor><rdf:Seq><rdf:li>${esc(creator)}</rdf:li></rdf:Seq></dc:contributor>\n` +
+formatField +
+`      <xmp:CreateDate>${formatXmpDate(creationDate)}</xmp:CreateDate>\n` +
+`      <xmp:ModifyDate>${formatXmpDate(modificationDate)}</xmp:ModifyDate>\n` +
+`      <xmpRights:Marked>True</xmpRights:Marked>\n` +
+`      <xmpRights:WebStatement>© 2025 CERT.ONE | JOHNJOHNFM, LLC. All rights reserved.</xmpRights:WebStatement>\n` +
 customFields +
 `    </rdf:Description>\n` +
 `  </rdf:RDF>\n` +
@@ -93,11 +109,23 @@ async function injectXmpMetadata(pdfDoc, xmpXml) {
 // Helper to set PDF metadata using pdf-lib, including custom fields and XMP
 async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, creator, custom }) {
   const pdfDoc = await PDFDocument.load(pdfBuffer);
+  
+  // Set basic metadata
   if (title) pdfDoc.setTitle(title);
   if (author) pdfDoc.setAuthor(author);
   if (subject) pdfDoc.setSubject(subject);
   if (producer) pdfDoc.setProducer(producer);
   if (creator) pdfDoc.setCreator(creator);
+  
+  // Set creation and modification dates
+  const now = new Date();
+  pdfDoc.setCreationDate(now);
+  pdfDoc.setModificationDate(now);
+  
+  // Extract metadata for XMP (autofill values)
+  const creationDate = now;
+  const modificationDate = now;
+  const format = 'application/pdf'; // PDF format
 
   // Embed custom metadata fields for notarization/blockchain in the Info dictionary
   const keyMap = {
@@ -154,7 +182,17 @@ async function setPdfMetadata(pdfBuffer, { title, author, subject, producer, cre
 
   // --- XMP Injection ---
   try {
-    const xmpXml = buildXmpXml({ title, author, subject, producer, creator, custom });
+    const xmpXml = buildXmpXml({ 
+      title, 
+      author, 
+      subject, 
+      producer, 
+      creator, 
+      custom, 
+      creationDate, 
+      modificationDate, 
+      format 
+    });
     await injectXmpMetadata(pdfDoc, xmpXml);
   } catch (xmpError) {
     console.warn('Failed to inject XMP metadata:', xmpError.message);

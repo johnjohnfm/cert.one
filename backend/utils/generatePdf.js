@@ -246,10 +246,10 @@ async function generatePdf(data) {
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
     
     // Generate PDF with optimized settings
-    const pdfBuffer = await page.pdf({ 
-      format: 'A4',
+    const pdfBuffer = await page.pdf({
+      format: 'Letter',
       printBackground: true,
-      margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
+      margin: { top: 0, right: 0, bottom: 0, left: 0 },
       preferCSSPageSize: true,
       displayHeaderFooter: false,
       omitBackground: false

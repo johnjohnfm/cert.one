@@ -34,6 +34,27 @@ function getPinataAuthHeaders() {
 }
 
 /**
+ * Enhanced error handling for Pinata responses
+ * @param {Response} response - Fetch response object
+ * @returns {string} - User-friendly error message
+ */
+function handlePinataError(response, errorText) {
+  if (response.status === 403) {
+    if (errorText.includes('NO_SCOPES_FOUND')) {
+      return `Pinata API key missing required scopes. Please ensure your API key has "pinFileToIPFS" and "pinJSONToIPFS" permissions enabled.`;
+    }
+    return `Pinata authentication failed (403). Please check your API credentials.`;
+  }
+  if (response.status === 401) {
+    return `Pinata authentication failed (401). Please verify your API key and secret are correct.`;
+  }
+  if (response.status === 429) {
+    return `Pinata rate limit exceeded (429). Please wait before trying again.`;
+  }
+  return `Pinata upload failed (${response.status}): ${errorText}`;
+}
+
+/**
  * Upload file to IPFS using Pinata
  * @param {Buffer} fileBuffer - File buffer to upload
  * @param {string} fileName - Name of the file
@@ -76,7 +97,7 @@ async function uploadToIPFS(fileBuffer, fileName, metadata = {}) {
     
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Pinata upload failed: ${response.status} ${errorText}`);
+      throw new Error(handlePinataError(response, errorText));
     }
     
     const result = await response.json();
@@ -146,7 +167,7 @@ async function uploadCertificateToIPFS(pdfBuffer, certificateId, certData = {}) 
     
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Certificate upload failed: ${response.status} ${errorText}`);
+      throw new Error(handlePinataError(response, errorText));
     }
     
     const result = await response.json();
@@ -201,7 +222,7 @@ async function uploadMetadataToIPFS(metadata, name = 'certificate-metadata') {
     
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Pinata JSON upload failed: ${response.status} ${errorText}`);
+      throw new Error(handlePinataError(response, errorText));
     }
     
     const result = await response.json();

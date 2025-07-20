@@ -153,10 +153,16 @@
         // Configure your API base URL here
         // For local development: 'http://localhost:3000'
         // For Render deployment: 'https://your-app-name.onrender.com'
-        // Update the URL below to match your actual Render deployment URL
-        const API_BASE = window.location.hostname === 'localhost' 
-            ? 'http://localhost:3000' 
-            : 'https://cert-one-backend.onrender.com'; // ⚠️ UPDATE THIS URL
+        // For same-domain testing: use relative URLs
+        let API_BASE = '';
+        
+        // Try to detect the correct API base URL
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            API_BASE = 'http://localhost:3000';
+        } else {
+            // Use same origin if this page is served by the backend
+            API_BASE = window.location.origin;
+        }
         
         let ipfsResults = [];
 
@@ -164,14 +170,33 @@
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('current-api-url').textContent = API_BASE;
             document.getElementById('api-url-input').value = API_BASE;
+            
+            // Test connectivity immediately
+            testConnectivity();
         });
 
         function updateApiUrl() {
             const newUrl = document.getElementById('api-url-input').value.trim();
             if (newUrl) {
-                window.API_BASE = newUrl;
+                API_BASE = newUrl;
                 document.getElementById('current-api-url').textContent = newUrl;
                 console.log('API URL updated to:', newUrl);
+                testConnectivity();
+            }
+        }
+
+        async function testConnectivity() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                console.log('✅ API connectivity test successful:', data);
+            } catch (error) {
+                console.warn('❌ API connectivity test failed:', error.message);
+                // Show warning in UI
+                const warningDiv = document.createElement('div');
+                warningDiv.style.cssText = 'background: rgba(255,0,0,0.2); padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #f44336;';
+                warningDiv.innerHTML = `⚠️ <strong>API Connection Warning:</strong> Cannot reach ${API_BASE}/health<br>Please update the API URL in the configuration section above.`;
+                document.querySelector('.container').insertBefore(warningDiv, document.querySelector('.test-section'));
             }
         }
 
@@ -404,4 +429,4 @@ ${ipfsData.originalCid ? `📁 View Original File: https://gateway.pinata.cloud/
         }
     </script>
 </body>
-</html> 
+</html>

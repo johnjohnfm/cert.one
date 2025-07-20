@@ -5,6 +5,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const cors = require('cors');
+const path = require('path');
 const generatePdf = require('./utils/generatePdf');
 const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
 const { createTimestampAPI } = require('./utils/opentimestamps');
@@ -33,6 +34,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Serve static files (for testing)
+app.use(express.static(__dirname + '/../'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -165,6 +169,23 @@ app.get('/test-simple', async (req, res, next) => {
   }
 });
 
+// Dedicated routes for test pages
+app.get('/test-ipfs-integration.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../test-ipfs-integration.html'));
+});
+
+app.get('/test-ipfs-integration', (req, res) => {
+  res.sendFile(path.join(__dirname, '../test-ipfs-integration.html'));
+});
+
+app.get('/test-certificate.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../test-certificate.html'));
+});
+
+app.get('/deployed-test.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../deployed-test.html'));
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -174,6 +195,7 @@ app.get('/', (req, res) => {
     endpoints: [
       'GET /health - Health check',
       'GET /test-ipfs - Test IPFS connectivity',
+      'GET /test-ipfs-integration.html - IPFS integration test page',
       'POST /certify - Generate certificate from JSON data',
       'POST /certify-text - Generate certificate from text',
       'POST /certify-file - Generate certificate from file upload',

@@ -8,7 +8,7 @@ const cors = require('cors');
 const generatePdf = require('./utils/generatePdf');
 const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
 const { createTimestampAPI } = require('./utils/opentimestamps');
-const { uploadToIPFS, uploadMetadataToIPFS, createCertificateMetadata } = require('./utils/ipfs');
+const { uploadToIPFS, uploadCertificateToIPFS, uploadMetadataToIPFS, createCertificateMetadata, uploadCompleteCertificatePackage } = require('./utils/ipfs');
 
 const app = express();
 
@@ -51,6 +51,47 @@ app.get('/test-file-access', (req, res) => {
     timestamp: new Date().toISOString(),
     test: 'Testing if static files are being served'
   });
+});
+
+// Test IPFS connectivity endpoint
+app.get('/test-ipfs', async (req, res) => {
+  try {
+    const hasCredentials = !!(process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY));
+    
+    if (!hasCredentials) {
+      return res.json({
+        status: 'disabled',
+        message: 'IPFS credentials not configured',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Test with a small JSON object
+    const testData = {
+      test: true,
+      message: 'IPFS connectivity test',
+      timestamp: new Date().toISOString()
+    };
+    
+    const { uploadMetadataToIPFS } = require('./utils/ipfs');
+    const result = await uploadMetadataToIPFS(testData, 'ipfs-test');
+    
+    res.json({
+      status: 'success',
+      message: 'IPFS connectivity test successful',
+      timestamp: new Date().toISOString(),
+      testCid: result.ipfsHash,
+      testUrl: result.gatewayUrl
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'IPFS connectivity test failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Test PDF generation endpoint
@@ -132,6 +173,7 @@ app.get('/', (req, res) => {
     status: 'operational',
     endpoints: [
       'GET /health - Health check',
+      'GET /test-ipfs - Test IPFS connectivity',
       'POST /certify - Generate certificate from JSON data',
       'POST /certify-text - Generate certificate from text',
       'POST /certify-file - Generate certificate from file upload',
@@ -233,8 +275,8 @@ app.post('/certify', async (req, res, next) => {
       res.end(pdfBuffer);
     } else {
       // Normal PDF response
-      res.set({
-        'Content-Type': 'application/pdf',
+    res.set({
+      'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`
       });
       res.end(pdfBuffer);
@@ -276,20 +318,27 @@ app.post('/certify-text', async (req, res, next) => {
       merkleRoot: timestampData.otsData || ''
     };
     
-    // Optional IPFS upload (only if credentials are configured)
-    let ipfsResult = null;
-    if (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY) {
-      try {
-        const metadata = createCertificateMetadata(certData, fileHash, timestampData);
-        ipfsResult = await uploadMetadataToIPFS(metadata, `cert-${certificateId}`);
-      } catch (ipfsError) {
-        console.warn('IPFS upload failed:', ipfsError.message);
-      }
-    }
-    
-    // Generate PDF certificate
+    // Generate PDF certificate first
     const templateData = mapToTemplateFormat(certData);
     const pdfBuffer = await generatePdf(templateData);
+    
+    // Upload complete certificate package to IPFS (if credentials are configured)
+    let ipfsResults = null;
+    if (process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY)) {
+      try {
+        ipfsResults = await uploadCompleteCertificatePackage(
+          pdfBuffer, 
+          Buffer.from(text), // Use text as original file
+          certData, 
+          fileHash, 
+          timestampData
+        );
+        console.log('✅ Complete certificate package uploaded to IPFS');
+      } catch (ipfsError) {
+        console.warn('❌ IPFS upload failed:', ipfsError.message);
+        ipfsResults = { success: false, errors: [ipfsError.message] };
+      }
+    }
     
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
@@ -301,18 +350,24 @@ app.post('/certify-text', async (req, res, next) => {
         'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
         'X-Certificate-ID': certificateId,
         'X-File-Hash': fileHash,
-        'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
+        'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
+        'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
+        'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
+        'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
       });
       res.end(pdfBuffer);
     } else {
       // Normal PDF response
-      res.set({
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-        'X-Certificate-ID': certificateId,
-        'X-File-Hash': fileHash,
-        'X-IPFS-Hash': ipfsResult?.ipfsHash || 'none'
-      });
+        res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
+      'X-Certificate-ID': certificateId,
+      'X-File-Hash': fileHash,
+      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
+      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
+      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
+      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
+    });
       res.end(pdfBuffer);
     }
     
@@ -353,32 +408,27 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       merkleRoot: timestampData.otsData || ''
     };
     
-    // Optional IPFS upload
-    let ipfsResult = null;
-    let metadataResult = null;
-    
-    if (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY) {
-      try {
-        ipfsResult = await uploadToIPFS(file.buffer, file.originalname, {
-          certificateId,
-          userName,
-          hash: fileHash
-        });
-        
-        const metadata = createCertificateMetadata(certData, fileHash, timestampData);
-        if (ipfsResult) {
-          metadata.ipfs.fileHash = ipfsResult.ipfsHash;
-          metadata.ipfs.gatewayUrl = ipfsResult.gatewayUrl;
-        }
-        metadataResult = await uploadMetadataToIPFS(metadata, `cert-${certificateId}`);
-      } catch (ipfsError) {
-        console.warn('IPFS upload failed:', ipfsError.message);
-      }
-    }
-    
-    // Generate PDF certificate
+    // Generate PDF certificate first
     const templateData = mapToTemplateFormat(certData);
     const pdfBuffer = await generatePdf(templateData);
+    
+    // Upload complete certificate package to IPFS (if credentials are configured)
+    let ipfsResults = null;
+    if (process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY)) {
+      try {
+        ipfsResults = await uploadCompleteCertificatePackage(
+          pdfBuffer, 
+          file.buffer, // Original file buffer
+          certData, 
+          fileHash, 
+          timestampData
+        );
+        console.log('✅ Complete certificate package uploaded to IPFS');
+      } catch (ipfsError) {
+        console.warn('❌ IPFS upload failed:', ipfsError.message);
+        ipfsResults = { success: false, errors: [ipfsError.message] };
+      }
+    }
     
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
@@ -390,20 +440,24 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
         'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
         'X-Certificate-ID': certificateId,
         'X-File-Hash': fileHash,
-        'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
-        'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
+        'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
+        'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
+        'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
+        'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
       });
       res.end(pdfBuffer);
     } else {
       // Normal PDF response
-      res.set({
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-        'X-Certificate-ID': certificateId,
-        'X-File-Hash': fileHash,
-        'X-IPFS-File-Hash': ipfsResult?.ipfsHash || 'none',
-        'X-IPFS-Metadata-Hash': metadataResult?.ipfsHash || 'none'
-      });
+        res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
+      'X-Certificate-ID': certificateId,
+      'X-File-Hash': fileHash,
+      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
+      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
+      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
+      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
+    });
       res.end(pdfBuffer);
     }
     
@@ -516,6 +570,7 @@ app.use((req, res) => {
     availableEndpoints: [
       'GET / - API information',
       'GET /health - Health check',
+      'GET /test-ipfs - Test IPFS connectivity',
       'POST /certify - Generate certificate from JSON data',
       'POST /certify-text - Generate certificate from text',
       'POST /certify-file - Generate certificate from file upload',
@@ -569,12 +624,13 @@ app.listen(PORT, () => {
   console.log(`📋 Available endpoints:`);
   console.log(`   GET / - API information`);
   console.log(`   GET /health - Health check`);
+  console.log(`   GET /test-ipfs - Test IPFS connectivity`);
   console.log(`   POST /certify - Generate certificate from JSON`);
   console.log(`   POST /certify-text - Generate certificate from text`);
   console.log(`   POST /certify-file - Generate certificate from file`);
   console.log(`   POST /verify - Verify hash`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   IPFS: ${process.env.PINATA_API_KEY ? 'Enabled' : 'Disabled'}`);
+  console.log(`   IPFS: ${(process.env.PINATA_JWT || process.env.PINATA_API_KEY) ? 'Enabled' : 'Disabled'}`);
 });
 
 module.exports = app;

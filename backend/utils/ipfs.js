@@ -247,7 +247,9 @@ function createCertificateMetadata(certData, fileHash, timestampData, ipfsData =
       blockchain: certData.blockchain || 'Bitcoin (OpenTimestamps)',
       timestamp: timestampData.timestamp || new Date().toISOString(),
       verificationUrl: timestampData.verificationUrl || 'https://ots.tools/verify',
-      otsData: timestampData.otsData || null
+      otsData: timestampData.otsData || null,
+      blockchainProof: timestampData.otsData || null,
+      verificationEndpoint: `/verify?hash=${fileHash}`
     },
     ipfs: {
       uploadedAt: new Date().toISOString(),
@@ -259,11 +261,10 @@ function createCertificateMetadata(certData, fileHash, timestampData, ipfsData =
       originalFileCid: ipfsData.originalFileCid || null,
       originalFileUrl: ipfsData.originalFileUrl || null
     },
-    verification: {
+    access: {
       certificateUrl: ipfsData.certificateUrl || null,
       metadataUrl: ipfsData.metadataUrl || null,
-      blockchainProof: timestampData.otsData || null,
-      verificationEndpoint: `/verify?hash=${fileHash}`
+      originalFileUrl: ipfsData.originalFileUrl || null
     }
   };
 }

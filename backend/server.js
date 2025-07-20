@@ -70,22 +70,26 @@ app.get('/test-ipfs', async (req, res) => {
       });
     }
     
-    // Test with a small JSON object
-    const testData = {
-      test: true,
-      message: 'IPFS connectivity test',
-      timestamp: new Date().toISOString()
-    };
+    // Test with a simple file upload (works with just "Files" permission)
+    const testContent = `CERT.ONE IPFS Connectivity Test
+Generated: ${new Date().toISOString()}
+Test Hash: ${Math.random().toString(36)}`;
     
-    const { uploadMetadataToIPFS } = require('./utils/ipfs');
-    const result = await uploadMetadataToIPFS(testData, 'ipfs-test');
+    const testBuffer = Buffer.from(testContent, 'utf8');
+    
+    const { uploadToIPFS } = require('./utils/ipfs');
+    const result = await uploadToIPFS(testBuffer, 'ipfs-connectivity-test.txt', {
+      type: 'connectivity-test',
+      timestamp: new Date().toISOString()
+    });
     
     res.json({
       status: 'success',
-      message: 'IPFS connectivity test successful',
+      message: 'IPFS file upload test successful',
       timestamp: new Date().toISOString(),
       testCid: result.ipfsHash,
-      testUrl: result.gatewayUrl
+      testUrl: result.gatewayUrl,
+      permissions: 'File upload working'
     });
     
   } catch (error) {

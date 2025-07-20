@@ -28,6 +28,7 @@ services:
       - key: PUPPETEER_DISABLE_HEADLESS_WARNING
         value: "true"
       # Add these as secret environment variables in Render dashboard:
+      # - PINATA_JWT (recommended - newer, more secure)
       # - PINATA_API_KEY
       # - PINATA_SECRET_KEY
       # - JWT_SECRET

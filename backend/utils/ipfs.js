@@ -1,674 +1,431 @@
-// Load environment variables first
-require('dotenv').config();
+// backend/utils/ipfs.js
+const FormData = require('form-data');
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const multer = require('multer');
-const cors = require('cors');
-const path = require('path');
-const generatePdf = require('./utils/generatePdf');
-const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
-const { createTimestampAPI } = require('./utils/opentimestamps');
-const { uploadToIPFS, uploadCertificateToIPFS, uploadMetadataToIPFS, createCertificateMetadata, uploadCompleteCertificatePackage } = require('./utils/ipfs');
+// Import fetch conditionally
+let fetch;
+try {
+  fetch = require('node-fetch');
+} catch (e) {
+  console.warn('node-fetch not available, IPFS functionality will be limited');
+  fetch = null;
+}
 
-const app = express();
-
-// Configure multer for file uploads
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    cb(null, true);
+/**
+ * Get Pinata authentication headers
+ * @returns {object} - Authentication headers
+ */
+function getPinataAuthHeaders() {
+  const PINATA_JWT = process.env.PINATA_JWT;
+  const PINATA_API_KEY = process.env.PINATA_API_KEY;
+  const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
+  
+  if (PINATA_JWT) {
+    return {
+      'Authorization': `Bearer ${PINATA_JWT}`
+    };
+  } else if (PINATA_API_KEY && PINATA_SECRET_KEY) {
+    return {
+      'pinata_api_key': PINATA_API_KEY,
+      'pinata_secret_api_key': PINATA_SECRET_KEY
+    };
+  } else {
+    throw new Error('Pinata credentials not configured. Please set PINATA_JWT or PINATA_API_KEY and PINATA_SECRET_KEY');
   }
-});
+}
 
-// Middleware
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-
-// CORS configuration
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-// Serve static files (for testing)
-app.use(express.static(__dirname + '/../'));
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Test endpoint to check if static files are being served
-app.get('/test-file-access', (req, res) => {
-  res.json({
-    message: 'This endpoint works',
-    timestamp: new Date().toISOString(),
-    test: 'Testing if static files are being served'
-  });
-});
-
-// Test IPFS connectivity endpoint
-app.get('/test-ipfs', async (req, res) => {
-  try {
-    const hasCredentials = !!(process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY));
-    
-    if (!hasCredentials) {
-      return res.json({
-        status: 'disabled',
-        message: 'IPFS credentials not configured',
-        timestamp: new Date().toISOString()
-      });
+/**
+ * Enhanced error handling for Pinata responses
+ * @param {Response} response - Fetch response object
+ * @returns {string} - User-friendly error message
+ */
+function handlePinataError(response, errorText) {
+  if (response.status === 403) {
+    if (errorText.includes('NO_SCOPES_FOUND')) {
+      return `Pinata API key missing required scopes. Please ensure your API key has "pinFileToIPFS" and "pinJSONToIPFS" permissions enabled.`;
     }
-    
-    // Test with a simple file upload (works with just "Files" permission)
-    const testContent = `CERT.ONE IPFS Connectivity Test
-Generated: ${new Date().toISOString()}
-Test Hash: ${Math.random().toString(36)}`;
-    
-    const testBuffer = Buffer.from(testContent, 'utf8');
-    
-    const { uploadToIPFS } = require('./utils/ipfs');
-    const result = await uploadToIPFS(testBuffer, 'ipfs-connectivity-test.txt', {
-      type: 'connectivity-test',
-      timestamp: new Date().toISOString()
-    });
-    
-    res.json({
-      status: 'success',
-      message: 'IPFS file upload test successful',
-      timestamp: new Date().toISOString(),
-      testCid: result.ipfsHash,
-      testUrl: result.gatewayUrl,
-      permissions: 'File upload working'
-    });
-    
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'IPFS connectivity test failed',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
+    return `Pinata authentication failed (403). Please check your API credentials.`;
   }
-});
+  if (response.status === 401) {
+    return `Pinata authentication failed (401). Please verify your API key and secret are correct.`;
+  }
+  if (response.status === 429) {
+    return `Pinata rate limit exceeded (429). Please wait before trying again.`;
+  }
+  return `Pinata upload failed (${response.status}): ${errorText}`;
+}
 
-// Test PDF generation endpoint
-app.get('/test-pdf', async (req, res, next) => {
+/**
+ * Upload file to IPFS using Pinata
+ * @param {Buffer} fileBuffer - File buffer to upload
+ * @param {string} fileName - Name of the file
+ * @param {object} metadata - Additional metadata
+ * @returns {Promise<object>} - IPFS upload result
+ */
+async function uploadToIPFS(fileBuffer, fileName, metadata = {}) {
+  if (!fetch) {
+    throw new Error('node-fetch not available for IPFS uploads');
+  }
+
   try {
-    console.log('Testing PDF generation...');
+    const form = new FormData();
+    form.append('file', fileBuffer, {
+      filename: fileName,
+      contentType: 'application/octet-stream'
+    });
     
-    const testData = {
-      userName: 'Test User',
-      email: 'test@example.com',
-      title: 'Test Certificate',
-      fileName: 'test.txt',
-      certificateId: 'TEST123',
-      fileHash: 'a'.repeat(64), // 64 character hash
-      timestamp: new Date().toISOString(),
-      blockchain: 'Bitcoin (OpenTimestamps)',
-      verificationLink: 'https://ots.tools/verify',
-      merkleRoot: 'test-merkle-root'
+    // Add metadata
+    const pinataMetadata = {
+      name: fileName,
+      keyvalues: {
+        uploadedAt: new Date().toISOString(),
+        ...metadata
+      }
     };
     
-    console.log('Test data:', testData);
-    const templateData = mapToTemplateFormat(testData);
-    const pdfBuffer = await generatePdf(templateData);
+    form.append('pinataMetadata', JSON.stringify(pinataMetadata));
     
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    const authHeaders = getPinataAuthHeaders();
     
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': 'attachment; filename="test-certificate.html"'
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-      res.set({
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="test-certificate.pdf"'
-      });
-      res.end(pdfBuffer);
+    const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        ...form.getHeaders()
+      },
+      body: form
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(handlePinataError(response, errorText));
     }
     
-  } catch (err) {
-    console.error('[ERROR] PDF test failed:', err);
-    res.status(500).json({
-      error: 'PDF Test Failed',
-      message: err.message,
-      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    const result = await response.json();
+    
+    return {
+      success: true,
+      ipfsHash: result.IpfsHash,
+      pinSize: result.PinSize,
+      timestamp: result.Timestamp,
+      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`,
+      publicUrl: `https://ipfs.io/ipfs/${result.IpfsHash}`,
+      cid: result.IpfsHash // Alias for compatibility
+    };
+    
+  } catch (error) {
+    throw new Error(`IPFS upload error: ${error.message}`);
   }
-});
+}
 
-// Simple test endpoint without generatePdf
-app.get('/test-simple', async (req, res, next) => {
+/**
+ * Upload PDF certificate to IPFS
+ * @param {Buffer} pdfBuffer - PDF certificate buffer
+ * @param {string} certificateId - Certificate ID
+ * @param {object} certData - Certificate data for metadata
+ * @returns {Promise<object>} - IPFS upload result
+ */
+async function uploadCertificateToIPFS(pdfBuffer, certificateId, certData = {}) {
+  if (!fetch) {
+    throw new Error('node-fetch not available for IPFS uploads');
+  }
+
   try {
-    console.log('Testing simple endpoint...');
+    const fileName = `CERTONE_${certificateId}.pdf`;
     
-    res.json({
-      message: 'Simple test successful',
-      timestamp: new Date().toISOString(),
-      test: 'This endpoint works without generatePdf'
+    const form = new FormData();
+    form.append('file', pdfBuffer, {
+      filename: fileName,
+      contentType: 'application/pdf'
     });
     
-  } catch (err) {
-    console.error('[ERROR] Simple test failed:', err);
-    res.status(500).json({
-      error: 'Simple Test Failed',
-      message: err.message
+    // Add certificate-specific metadata
+    const pinataMetadata = {
+      name: fileName,
+      keyvalues: {
+        uploadedAt: new Date().toISOString(),
+        type: 'certificate-pdf',
+        certificateId: certificateId,
+        userName: certData.userName || 'Unknown',
+        fileName: certData.fileName || 'Unknown',
+        fileHash: certData.fileHash || 'Unknown',
+        title: certData.title || 'Document Certificate'
+      }
+    };
+    
+    form.append('pinataMetadata', JSON.stringify(pinataMetadata));
+    
+    const authHeaders = getPinataAuthHeaders();
+    
+    const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        ...form.getHeaders()
+      },
+      body: form
     });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(handlePinataError(response, errorText));
+    }
+    
+    const result = await response.json();
+    
+    return {
+      success: true,
+      ipfsHash: result.IpfsHash,
+      pinSize: result.PinSize,
+      timestamp: result.Timestamp,
+      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`,
+      publicUrl: `https://ipfs.io/ipfs/${result.IpfsHash}`,
+      cid: result.IpfsHash,
+      fileName: fileName
+    };
+    
+  } catch (error) {
+    throw new Error(`Certificate IPFS upload error: ${error.message}`);
   }
-});
+}
 
-// Dedicated routes for test pages
-app.get('/test-ipfs-integration.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '../test-ipfs-integration.html'));
-});
+/**
+ * Upload JSON metadata to IPFS
+ * @param {object} metadata - JSON metadata object
+ * @param {string} name - Name for the metadata file
+ * @returns {Promise<object>} - IPFS upload result
+ */
+async function uploadMetadataToIPFS(metadata, name = 'certificate-metadata') {
+  if (!fetch) {
+    throw new Error('node-fetch not available for IPFS uploads');
+  }
 
-app.get('/test-ipfs-integration', (req, res) => {
-  res.sendFile(path.join(__dirname, '../test-ipfs-integration.html'));
-});
+  try {
+    const authHeaders = getPinataAuthHeaders();
+    
+    const response = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        pinataContent: metadata,
+        pinataMetadata: {
+          name: name,
+          keyvalues: {
+            uploadedAt: new Date().toISOString(),
+            type: 'certificate-metadata'
+          }
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(handlePinataError(response, errorText));
+    }
+    
+    const result = await response.json();
+    
+    return {
+      success: true,
+      ipfsHash: result.IpfsHash,
+      pinSize: result.PinSize,
+      timestamp: result.Timestamp,
+      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`,
+      publicUrl: `https://ipfs.io/ipfs/${result.IpfsHash}`,
+      cid: result.IpfsHash
+    };
+    
+  } catch (error) {
+    throw new Error(`IPFS metadata upload error: ${error.message}`);
+  }
+}
 
-app.get('/test-certificate.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '../test-certificate.html'));
-});
-
-app.get('/deployed-test.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '../deployed-test.html'));
-});
-
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    message: 'CERT.ONE Backend API',
-    version: '1.0.0',
-    status: 'operational',
-    endpoints: [
-      'GET /health - Health check',
-      'GET /test-ipfs - Test IPFS connectivity',
-      'GET /test-ipfs-integration.html - IPFS integration test page',
-      'POST /certify - Generate certificate from JSON data',
-      'POST /certify-text - Generate certificate from text',
-      'POST /certify-file - Generate certificate from file upload',
-      'POST /verify - Verify a hash',
-      'GET /certificate/:id - Get certificate metadata'
-    ]
-  });
-});
-
-// Helper function to map server variables to template variables
-function mapToTemplateFormat(data) {
+/**
+ * Create comprehensive certificate metadata object for IPFS storage
+ * @param {object} certData - Certificate data
+ * @param {string} fileHash - SHA256 hash of original file
+ * @param {object} timestampData - OpenTimestamps data
+ * @param {object} ipfsData - IPFS upload results
+ * @returns {object} - Structured metadata object
+ */
+function createCertificateMetadata(certData, fileHash, timestampData, ipfsData = {}) {
   return {
-    certificate_id: data.certificateId,
-    certificate_number: data.certificateId, // Map certificateId to certificate_number
-    file_hash: data.fileHash,
-    timestamp: data.timestamp,
-    blockchain: data.blockchain,
-    verification_url: data.verificationLink,
-    user_name: data.userName,
-    email: data.email,
-    title: data.title,
-    file_name: data.fileName,
-    merkle_root: data.merkleRoot
+    version: '1.0',
+    type: 'blockchain-certificate',
+    createdAt: new Date().toISOString(),
+    certificate: {
+      id: certData.certificateId,
+      userName: certData.userName,
+      email: certData.email,
+      title: certData.title,
+      fileName: certData.fileName
+    },
+    verification: {
+      fileHash,
+      hashAlgorithm: 'SHA256',
+      blockchain: certData.blockchain || 'Bitcoin (OpenTimestamps)',
+      timestamp: timestampData.timestamp || new Date().toISOString(),
+      verificationUrl: timestampData.verificationUrl || 'https://ots.tools/verify',
+      otsData: timestampData.otsData || null,
+      blockchainProof: timestampData.otsData || null,
+      verificationEndpoint: `/verify?hash=${fileHash}`
+    },
+    ipfs: {
+      uploadedAt: new Date().toISOString(),
+      network: 'IPFS via Pinata',
+      certificateCid: ipfsData.certificateCid || null,
+      certificateUrl: ipfsData.certificateUrl || null,
+      metadataCid: ipfsData.metadataCid || null,
+      metadataUrl: ipfsData.metadataUrl || null,
+      originalFileCid: ipfsData.originalFileCid || null,
+      originalFileUrl: ipfsData.originalFileUrl || null
+    },
+    access: {
+      certificateUrl: ipfsData.certificateUrl || null,
+      metadataUrl: ipfsData.metadataUrl || null,
+      originalFileUrl: ipfsData.originalFileUrl || null
+    }
   };
 }
 
-// Debug endpoint to log JSON payload
-app.post('/debug-payload', (req, res) => {
-  console.log('=== DEBUG PAYLOAD ===');
-  console.log('Headers:', req.headers);
-  console.log('Body:', JSON.stringify(req.body, null, 2));
-  console.log('Body keys:', Object.keys(req.body));
-  console.log('====================');
-  
-  res.json({
-    received: true,
-    bodyKeys: Object.keys(req.body),
-    body: req.body
-  });
-});
+/**
+ * Upload complete certificate package to IPFS
+ * @param {Buffer} pdfBuffer - PDF certificate buffer
+ * @param {Buffer} originalFileBuffer - Original file buffer (optional)
+ * @param {object} certData - Certificate data
+ * @param {string} fileHash - SHA256 hash of original file
+ * @param {object} timestampData - OpenTimestamps data
+ * @returns {Promise<object>} - Complete IPFS upload results
+ */
+async function uploadCompleteCertificatePackage(pdfBuffer, originalFileBuffer, certData, fileHash, timestampData) {
+  const results = {
+    success: false,
+    certificate: null,
+    metadata: null,
+    originalFile: null,
+    errors: [],
+    permissions: 'unknown'
+  };
 
-// Original certificate endpoint (for JSON data)
-app.post('/certify', async (req, res, next) => {
   try {
-    console.log('Received certify request:', req.body);
-    
-    // Flexible field extraction with fallbacks
-    const userName = req.body.userName || req.body.user_name || req.body.name;
-    const fileName = req.body.fileName || req.body.file_name || req.body.filename;
-    const fileHash = req.body.fileHash || req.body.file_hash || req.body.hash;
-    
-    // Validate required fields
-    if (!userName || !fileName || !fileHash) {
-      return res.status(400).json({ 
-        error: 'Missing required fields. Need: userName/user_name/name, fileName/file_name/filename, fileHash/file_hash/hash',
-        received: {
-          userName: !!userName,
-          fileName: !!fileName,
-          fileHash: !!fileHash
-        },
-        bodyKeys: Object.keys(req.body)
-      });
-    }
-
-    // Validate fileHash format
-    if (!/^[a-fA-F0-9]{64}$/.test(fileHash)) {
-      return res.status(400).json({ 
-        error: 'Invalid fileHash format. Must be a 64-character SHA256 hash' 
-      });
-    }
-
-    // Add default values for missing fields
-    const certData = {
-      userName,
-      fileName,
-      fileHash,
-      email: req.body.email || '',
-      title: req.body.title || 'Document Certificate',
-      certificateId: req.body.certificateId || req.body.certificate_id || generateCertificateId(fileHash),
-      timestamp: req.body.timestamp || new Date().toISOString(),
-      blockchain: req.body.blockchain || 'Bitcoin (OpenTimestamps)',
-      verificationLink: req.body.verificationLink || req.body.verification_url || 'https://ots.tools/verify',
-      merkleRoot: req.body.merkleRoot || req.body.merkle_root || ''
-    };
-
-    console.log('Generating PDF with data:', certData);
-    const templateData = mapToTemplateFormat(certData);
-    const pdfBuffer = await generatePdf(templateData);
-
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
-    
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.html"`
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-    res.set({
-      'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`
-      });
-      res.end(pdfBuffer);
-    }
-
-  } catch (err) {
-    console.error('[ERROR] PDF generation failed:', err);
-    next(err);
-  }
-});
-
-// Text-based certification endpoint
-app.post('/certify-text', async (req, res, next) => {
-  try {
-    const { text, userName, email, title } = req.body;
-    
-    if (!text) {
-      return res.status(400).json({ error: 'Text content is required' });
-    }
-    
-    // Generate hash
-    const fileHash = hashText(text);
-    const certificateId = generateCertificateId(fileHash);
-    
-    // Create timestamp (simplified version)
-    const timestampData = await createTimestampAPI(fileHash);
-    
-    // Prepare certificate data
-    const certData = {
-      userName: userName || 'Anonymous',
-      email: email || '',
-      title: title || 'Text Document',
-      fileName: `text-${Date.now()}.txt`,
-      certificateId,
-      fileHash,
-      timestamp: new Date().toISOString(),
-      blockchain: 'Bitcoin (OpenTimestamps)',
-      verificationLink: timestampData.verificationUrl || 'https://ots.tools/verify',
-      merkleRoot: timestampData.otsData || ''
-    };
-    
-    // Generate PDF certificate first
-    const templateData = mapToTemplateFormat(certData);
-    const pdfBuffer = await generatePdf(templateData);
-    
-    // Upload complete certificate package to IPFS (if credentials are configured)
-    let ipfsResults = null;
-    if (process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY)) {
-      try {
-        ipfsResults = await uploadCompleteCertificatePackage(
-          pdfBuffer, 
-          Buffer.from(text), // Use text as original file
-          certData, 
-          fileHash, 
-          timestampData
-        );
-        console.log('✅ Complete certificate package uploaded to IPFS');
-      } catch (ipfsError) {
-        console.warn('❌ IPFS upload failed:', ipfsError.message);
-        ipfsResults = { success: false, errors: [ipfsError.message] };
+    // 1. Upload PDF certificate
+    try {
+      results.certificate = await uploadCertificateToIPFS(pdfBuffer, certData.certificateId, certData);
+      console.log(`✅ Certificate uploaded to IPFS: ${results.certificate.ipfsHash}`);
+      results.permissions = 'file-upload-working';
+    } catch (error) {
+      results.errors.push(`Certificate upload failed: ${error.message}`);
+      console.error('❌ Certificate upload failed:', error.message);
+      
+      // If this is a scopes error, note it
+      if (error.message.includes('scopes') || error.message.includes('NO_SCOPES_FOUND')) {
+        results.permissions = 'insufficient-scopes';
       }
     }
-    
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
-    
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
-        'X-Certificate-ID': certificateId,
-        'X-File-Hash': fileHash,
-        'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-        'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-        'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-        'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-        res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-      'X-Certificate-ID': certificateId,
-      'X-File-Hash': fileHash,
-      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-    });
-      res.end(pdfBuffer);
-    }
-    
-  } catch (err) {
-    console.error('[ERROR] Text certification failed:', err);
-    next(err);
-  }
-});
 
-// File-based certification endpoint
-app.post('/certify-file', upload.single('file'), async (req, res, next) => {
+    // 2. Upload original file (if provided)
+    if (originalFileBuffer && certData.fileName) {
+      try {
+        results.originalFile = await uploadToIPFS(originalFileBuffer, certData.fileName, {
+          certificateId: certData.certificateId,
+          type: 'original-file'
+        });
+        console.log(`✅ Original file uploaded to IPFS: ${results.originalFile.ipfsHash}`);
+      } catch (error) {
+        results.errors.push(`Original file upload failed: ${error.message}`);
+        console.error('❌ Original file upload failed:', error.message);
+      }
+    }
+
+    // 3. Try to upload metadata (optional - may fail if missing JSON permissions)
+    try {
+      const metadata = createCertificateMetadata(certData, fileHash, timestampData, {
+        certificateCid: results.certificate?.ipfsHash,
+        certificateUrl: results.certificate?.gatewayUrl,
+        originalFileCid: results.originalFile?.ipfsHash,
+        originalFileUrl: results.originalFile?.gatewayUrl
+      });
+
+      results.metadata = await uploadMetadataToIPFS(metadata, `cert-metadata-${certData.certificateId}`);
+      console.log(`✅ Metadata uploaded to IPFS: ${results.metadata.ipfsHash}`);
+    } catch (error) {
+      // If metadata upload fails due to missing JSON permissions, that's ok
+      if (error.message.includes('pinJSONToIPFS') || error.message.includes('scopes')) {
+        console.log('⚠️ Metadata upload skipped - JSON permissions not available');
+        results.errors.push('Metadata upload skipped (requires pinJSONToIPFS permission)');
+      } else {
+        results.errors.push(`Metadata upload failed: ${error.message}`);
+        console.error('❌ Metadata upload failed:', error.message);
+      }
+    }
+
+    // Determine overall success - we consider it successful if we can upload files
+    results.success = results.certificate !== null || results.originalFile !== null;
+
+    return results;
+
+  } catch (error) {
+    results.errors.push(`Package upload failed: ${error.message}`);
+    throw new Error(`Complete certificate package upload failed: ${error.message}`);
+  }
+}
+
+/**
+ * Alternative: Upload to web3.storage (if preferred over Pinata)
+ * @param {Buffer} fileBuffer - File buffer to upload
+ * @param {string} fileName - Name of the file
+ * @returns {Promise<object>} - Web3.storage upload result
+ */
+async function uploadToWeb3Storage(fileBuffer, fileName) {
+  if (!fetch) {
+    throw new Error('node-fetch not available for Web3.Storage uploads');
+  }
+
+  const WEB3_STORAGE_TOKEN = process.env.WEB3_STORAGE_TOKEN;
+  
+  if (!WEB3_STORAGE_TOKEN) {
+    throw new Error('Web3.Storage token not configured');
+  }
+  
   try {
-    const file = req.file;
-    const { userName, email, title } = req.body;
+    const form = new FormData();
+    form.append('file', fileBuffer, fileName);
     
-    if (!file) {
-      return res.status(400).json({ error: 'File is required' });
+    const response = await fetch('https://api.web3.storage/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WEB3_STORAGE_TOKEN}`,
+        ...form.getHeaders()
+      },
+      body: form
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Web3.Storage upload failed: ${response.status} ${errorText}`);
     }
     
-    // Generate hash
-    const fileHash = hashFile(file.buffer);
-    const certificateId = generateCertificateId(fileHash);
+    const result = await response.json();
     
-    // Create timestamp
-    const timestampData = await createTimestampAPI(fileHash);
-    
-    // Prepare certificate data
-    const certData = {
-      userName: userName || 'Anonymous',
-      email: email || '',
-      title: title || 'File Document',
-      fileName: file.originalname,
-      certificateId,
-      fileHash,
-      timestamp: new Date().toISOString(),
-      blockchain: 'Bitcoin (OpenTimestamps)',
-      verificationLink: timestampData.verificationUrl || 'https://ots.tools/verify',
-      merkleRoot: timestampData.otsData || ''
+    return {
+      success: true,
+      cid: result.cid,
+      gatewayUrl: `https://${result.cid}.ipfs.w3s.link`,
+      publicUrl: `https://ipfs.io/ipfs/${result.cid}`
     };
     
-    // Generate PDF certificate first
-    const templateData = mapToTemplateFormat(certData);
-    const pdfBuffer = await generatePdf(templateData);
-    
-    // Upload complete certificate package to IPFS (if credentials are configured)
-    let ipfsResults = null;
-    if (process.env.PINATA_JWT || (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_KEY)) {
-      try {
-        ipfsResults = await uploadCompleteCertificatePackage(
-          pdfBuffer, 
-          file.buffer, // Original file buffer
-          certData, 
-          fileHash, 
-          timestampData
-        );
-        console.log('✅ Complete certificate package uploaded to IPFS');
-      } catch (ipfsError) {
-        console.warn('❌ IPFS upload failed:', ipfsError.message);
-        ipfsResults = { success: false, errors: [ipfsError.message] };
-      }
-    }
-    
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
-    
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
-        'X-Certificate-ID': certificateId,
-        'X-File-Hash': fileHash,
-        'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-        'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-        'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-        'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-        res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-      'X-Certificate-ID': certificateId,
-      'X-File-Hash': fileHash,
-      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-    });
-      res.end(pdfBuffer);
-    }
-    
-  } catch (err) {
-    console.error('[ERROR] File certification failed:', err);
-    next(err);
+  } catch (error) {
+    throw new Error(`Web3.Storage upload error: ${error.message}`);
   }
-});
+}
 
-// Endpoint to verify a hash
-app.post('/verify', async (req, res, next) => {
-  try {
-    const { hash, otsData } = req.body;
-    
-    if (!hash) {
-      return res.status(400).json({ error: 'Hash is required for verification' });
-    }
-    
-    // Basic hash format validation
-    if (!/^[a-fA-F0-9]{64}$/.test(hash)) {
-      return res.status(400).json({ error: 'Invalid SHA256 hash format' });
-    }
-    
-    let verificationResult = {
-      hash,
-      verified: false,
-      timestamp: new Date().toISOString(),
-      verificationUrl: `https://ots.tools/verify`,
-      message: 'Verification not available'
-    };
-    
-    // If OTS data is provided, verify it
-    if (otsData) {
-      try {
-        const { verifyTimestamp } = require('./utils/opentimestamps');
-        const result = await verifyTimestamp(hash, otsData);
-        verificationResult = {
-          ...verificationResult,
-          verified: result.verified,
-          message: result.verified ? 'Hash verified on Bitcoin blockchain' : 'Hash verification failed',
-          details: result.output,
-          error: result.error
-        };
-      } catch (verifyError) {
-        verificationResult.error = verifyError.message;
-        verificationResult.message = 'Verification process failed';
-      }
-    } else {
-      // Check if we have a stored OTS file for this hash
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const tempDir = path.join(__dirname, 'temp');
-        const otsFile = path.join(tempDir, `permanent_${hash}.ots`);
-        
-        if (fs.existsSync(otsFile)) {
-          const { exec } = require('child_process');
-          const { promisify } = require('util');
-          const execAsync = promisify(exec);
-          
-          // Verify using stored OTS file
-          const command = `ots verify "${otsFile}"`;
-          const { stdout, stderr } = await execAsync(command);
-          
-          verificationResult = {
-            ...verificationResult,
-            verified: !stderr || stderr.includes('Success'),
-            message: !stderr || stderr.includes('Success') ? 'Hash verified on Bitcoin blockchain' : 'Hash verification failed',
-            details: stdout,
-            error: stderr
-          };
-        } else {
-          verificationResult.message = 'No timestamp proof found for this hash';
-        }
-      } catch (fileError) {
-        verificationResult.message = 'Could not check for stored timestamp proof';
-        verificationResult.error = fileError.message;
-      }
-    }
-    
-    res.json(verificationResult);
-    
-  } catch (err) {
-    console.error('[ERROR] Verification failed:', err);
-    next(err);
-  }
-});
-
-// Endpoint to get certificate metadata
-app.get('/certificate/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    
-    res.json({
-      certificateId: id,
-      status: 'Certificate lookup functionality coming soon',
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (err) {
-    console.error('[ERROR] Certificate lookup failed:', err);
-    next(err);
-  }
-});
-
-// Fallback route
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Route not found',
-    availableEndpoints: [
-      'GET / - API information',
-      'GET /health - Health check',
-      'GET /test-ipfs - Test IPFS connectivity',
-      'POST /certify - Generate certificate from JSON data',
-      'POST /certify-text - Generate certificate from text',
-      'POST /certify-file - Generate certificate from file upload',
-      'POST /verify - Verify a hash',
-      'GET /certificate/:id - Get certificate metadata'
-    ]
-  });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('[GLOBAL ERROR]', err);
-  console.error('Stack trace:', err.stack);
-  
-  // Handle multer errors
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        error: 'File too large',
-        message: 'Maximum file size is 50MB'
-      });
-    }
-  }
-  
-  // Handle specific error types
-  if (err.message && err.message.includes('Template not found')) {
-    return res.status(500).json({
-      error: 'Template Error',
-      message: 'PDF template file not found'
-    });
-  }
-  
-  if (err.message && err.message.includes('PDF generation failed')) {
-    return res.status(500).json({
-      error: 'PDF Generation Error',
-      message: 'Failed to generate PDF certificate'
-    });
-  }
-  
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 CERT.ONE Server listening on port ${PORT}`);
-  console.log(`📋 Available endpoints:`);
-  console.log(`   GET / - API information`);
-  console.log(`   GET /health - Health check`);
-  console.log(`   GET /test-ipfs - Test IPFS connectivity`);
-  console.log(`   POST /certify - Generate certificate from JSON`);
-  console.log(`   POST /certify-text - Generate certificate from text`);
-  console.log(`   POST /certify-file - Generate certificate from file`);
-  console.log(`   POST /verify - Verify hash`);
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   IPFS: ${(process.env.PINATA_JWT || process.env.PINATA_API_KEY) ? 'Enabled' : 'Disabled'}`);
-});
-
-module.exports = app;
-
-app.get('/test-generatePdf-type', (req, res) => {
-  try {
-    res.json({
-      type: typeof generatePdf,
-      isFunction: typeof generatePdf === 'function',
-      toString: generatePdf.toString().slice(0, 100) // first 100 chars
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+module.exports = {
+  uploadToIPFS,
+  uploadCertificateToIPFS,
+  uploadMetadataToIPFS,
+  createCertificateMetadata,
+  uploadCompleteCertificatePackage,
+  uploadToWeb3Storage
+};

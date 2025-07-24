@@ -149,7 +149,14 @@
         </div>
 
         <div class="test-section">
-            <h3>5. Supabase Logging Validation</h3>
+            <h3>5. Supabase Database Connection Test</h3>
+            <p>Test the connection to the Supabase database before validating certificates.</p>
+            <button onclick="testSupabaseConnection()">Test Supabase Connection</button>
+            <div id="supabase-connection-result" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>6. Supabase Logging Validation</h3>
             <p>Validate that the certificate was logged in Supabase. Enter a Certificate ID (from above) and click Validate.</p>
             <input type="text" id="supabase-cert-id" placeholder="Enter Certificate ID" style="width: 60%; padding: 8px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
             <button onclick="validateSupabaseLog()">Validate Supabase Log</button>

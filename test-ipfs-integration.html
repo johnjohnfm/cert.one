@@ -443,6 +443,29 @@ ${ipfsData.originalCid ? `📁 View Original File: https://gateway.pinata.cloud/
             summaryDiv.innerHTML = html;
         }
 
+        function testSupabaseConnection() {
+            const resultDiv = document.getElementById('supabase-connection-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result info';
+            resultDiv.innerHTML = '<div class="loading"></div> Testing Supabase connection...';
+
+            fetch(`${API_BASE}/test-supabase`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        resultDiv.className = 'result success';
+                        resultDiv.innerHTML = `✅ Supabase connection successful!<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    } else {
+                        resultDiv.className = 'result error';
+                        resultDiv.innerHTML = `❌ Supabase connection failed.<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    }
+                })
+                .catch(error => {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `Error: ${error.message}`;
+                });
+        }
+
         function validateSupabaseLog() {
             const certId = document.getElementById('supabase-cert-id').value.trim();
             const resultDiv = document.getElementById('supabase-log-result');

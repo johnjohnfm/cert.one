@@ -147,6 +147,14 @@
                 <p>No IPFS uploads yet. Run the tests above to see results.</p>
             </div>
         </div>
+
+        <div class="test-section">
+            <h3>5. Supabase Logging Validation</h3>
+            <p>Validate that the certificate was logged in Supabase. Enter a Certificate ID (from above) and click Validate.</p>
+            <input type="text" id="supabase-cert-id" placeholder="Enter Certificate ID" style="width: 60%; padding: 8px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
+            <button onclick="validateSupabaseLog()">Validate Supabase Log</button>
+            <div id="supabase-log-result" class="result" style="display: none;"></div>
+        </div>
     </div>
 
     <script>
@@ -426,6 +434,33 @@ ${ipfsData.originalCid ? `📁 View Original File: https://gateway.pinata.cloud/
             });
 
             summaryDiv.innerHTML = html;
+        }
+
+        function validateSupabaseLog() {
+            const certId = document.getElementById('supabase-cert-id').value.trim();
+            const resultDiv = document.getElementById('supabase-log-result');
+            if (!certId) {
+                alert('Please enter a Certificate ID to validate.');
+                return;
+            }
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result info';
+            resultDiv.innerHTML = '<div class="loading"></div> Validating Supabase log...';
+            fetch(`${API_BASE}/certificate/${encodeURIComponent(certId)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'Found') {
+                        resultDiv.className = 'result success';
+                        resultDiv.innerHTML = `✅ Certificate found in Supabase!<br><pre>${JSON.stringify(data.data, null, 2)}</pre>`;
+                    } else {
+                        resultDiv.className = 'result error';
+                        resultDiv.innerHTML = `❌ Certificate not found in Supabase.<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    }
+                })
+                .catch(error => {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `Error: ${error.message}`;
+                });
         }
     </script>
 </body>

@@ -58,6 +58,53 @@ app.get('/test-file-access', (req, res) => {
   });
 });
 
+// Test Supabase connectivity endpoint
+app.get('/test-supabase', async (req, res) => {
+  try {
+    const hasCredentials = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE);
+    
+    if (!hasCredentials) {
+      return res.json({
+        status: 'disabled',
+        message: 'Supabase credentials not configured',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const supabase = require('./utils/supabaseClient');
+    
+    // Test basic connectivity
+    const { data, error } = await supabase
+      .from('certificates')
+      .select('count')
+      .limit(1);
+    
+    if (error) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'Supabase connectivity test failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      status: 'success',
+      message: 'Supabase connectivity test successful',
+      timestamp: new Date().toISOString(),
+      connection: 'Working'
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Supabase connectivity test failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Test IPFS connectivity endpoint
 app.get('/test-ipfs', async (req, res) => {
   try {
@@ -199,6 +246,7 @@ app.get('/', (req, res) => {
     status: 'operational',
     endpoints: [
       'GET /health - Health check',
+      'GET /test-supabase - Test Supabase connectivity',
       'GET /test-ipfs - Test IPFS connectivity',
       'GET /test-ipfs-integration.html - IPFS integration test page',
       'POST /certify - Generate certificate from JSON data',
@@ -321,7 +369,7 @@ app.post('/certify', async (req, res, next) => {
       blockchain: certData.blockchain,
       verification_url: certData.verificationLink,
       certificate_number: certData.certificateId,
-      merle_root: certData.merkleRoot,
+      merkle_root: certData.merkleRoot,
       created_at: new Date().toISOString()
     };
     logCertificate(logData).catch(e => console.error('Supabase log error:', e));
@@ -426,7 +474,7 @@ app.post('/certify-text', async (req, res, next) => {
       blockchain: certData.blockchain,
       verification_url: certData.verificationLink,
       certificate_number: certData.certificateId,
-      merle_root: certData.merkleRoot,
+      merkle_root: certData.merkleRoot,
       ipfs_cid: ipfsResults?.certificate?.ipfsHash,
       ipfs_url: ipfsResults?.certificate?.gatewayUrl,
       ots_url: certData.verificationLink,
@@ -535,7 +583,7 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       blockchain: certData.blockchain,
       verification_url: certData.verificationLink,
       certificate_number: certData.certificateId,
-      merle_root: certData.merkleRoot,
+      merkle_root: certData.merkleRoot,
       ipfs_cid: ipfsResults?.certificate?.ipfsHash,
       ipfs_url: ipfsResults?.certificate?.gatewayUrl,
       ots_url: certData.verificationLink,

@@ -632,13 +632,27 @@ app.post('/verify', async (req, res, next) => {
 app.get('/certificate/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    
+    // Fetch from Supabase
+    const supabase = require('./utils/supabaseClient');
+    const { data, error } = await supabase
+      .from('certificates')
+      .select('*')
+      .eq('certificate_id', id)
+      .single();
+    if (error || !data) {
+      return res.status(404).json({
+        certificateId: id,
+        status: 'Not found in Supabase',
+        error: error ? error.message : undefined,
+        timestamp: new Date().toISOString()
+      });
+    }
     res.json({
       certificateId: id,
-      status: 'Certificate lookup functionality coming soon',
+      status: 'Found',
+      data,
       timestamp: new Date().toISOString()
     });
-    
   } catch (err) {
     console.error('[ERROR] Certificate lookup failed:', err);
     next(err);

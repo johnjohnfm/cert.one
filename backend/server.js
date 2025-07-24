@@ -10,6 +10,7 @@ const generatePdf = require('./utils/generatePdf');
 const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
 const { createTimestampAPI } = require('./utils/opentimestamps');
 const { uploadToIPFS, uploadCertificateToIPFS, uploadMetadataToIPFS, createCertificateMetadata, uploadCompleteCertificatePackage } = require('./utils/ipfs');
+const { logCertificate } = require('./utils/supabaseLogger');
 
 const app = express();
 
@@ -308,6 +309,23 @@ app.post('/certify', async (req, res, next) => {
       res.end(pdfBuffer);
     }
 
+    // Prepare data for logging
+    const logData = {
+      certificate_id: certData.certificateId,
+      user_name: certData.userName,
+      email: certData.email,
+      title: certData.title,
+      file_name: certData.fileName,
+      file_hash: certData.fileHash,
+      timestamp: certData.timestamp,
+      blockchain: certData.blockchain,
+      verification_url: certData.verificationLink,
+      certificate_number: certData.certificateId,
+      merle_root: certData.merkleRoot,
+      created_at: new Date().toISOString()
+    };
+    logCertificate(logData).catch(e => console.error('Supabase log error:', e));
+
   } catch (err) {
     console.error('[ERROR] PDF generation failed:', err);
     next(err);
@@ -397,6 +415,25 @@ app.post('/certify-text', async (req, res, next) => {
       res.end(pdfBuffer);
     }
     
+    const logDataText = {
+      certificate_id: certData.certificateId,
+      user_name: certData.userName,
+      email: certData.email,
+      title: certData.title,
+      file_name: certData.fileName,
+      file_hash: certData.fileHash,
+      timestamp: certData.timestamp,
+      blockchain: certData.blockchain,
+      verification_url: certData.verificationLink,
+      certificate_number: certData.certificateId,
+      merle_root: certData.merkleRoot,
+      ipfs_cid: ipfsResults?.certificate?.ipfsHash,
+      ipfs_url: ipfsResults?.certificate?.gatewayUrl,
+      ots_url: certData.verificationLink,
+      created_at: new Date().toISOString()
+    };
+    logCertificate(logDataText).catch(e => console.error('Supabase log error:', e));
+
   } catch (err) {
     console.error('[ERROR] Text certification failed:', err);
     next(err);
@@ -487,6 +524,25 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       res.end(pdfBuffer);
     }
     
+    const logDataFile = {
+      certificate_id: certData.certificateId,
+      user_name: certData.userName,
+      email: certData.email,
+      title: certData.title,
+      file_name: certData.fileName,
+      file_hash: certData.fileHash,
+      timestamp: certData.timestamp,
+      blockchain: certData.blockchain,
+      verification_url: certData.verificationLink,
+      certificate_number: certData.certificateId,
+      merle_root: certData.merkleRoot,
+      ipfs_cid: ipfsResults?.certificate?.ipfsHash,
+      ipfs_url: ipfsResults?.certificate?.gatewayUrl,
+      ots_url: certData.verificationLink,
+      created_at: new Date().toISOString()
+    };
+    logCertificate(logDataFile).catch(e => console.error('Supabase log error:', e));
+
   } catch (err) {
     console.error('[ERROR] File certification failed:', err);
     next(err);

@@ -338,26 +338,7 @@ app.post('/certify', async (req, res, next) => {
     const templateData = mapToTemplateFormat(certData);
     const pdfBuffer = await generatePdf(templateData);
 
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
-    
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.html"`
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-    res.set({
-      'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`
-      });
-      res.end(pdfBuffer);
-    }
-
-    // Prepare data for logging
+    // Prepare data for logging to Supabase
     const logData = {
       certificate_id: certData.certificateId,
       user_name: certData.userName,
@@ -372,7 +353,38 @@ app.post('/certify', async (req, res, next) => {
       merkle_root: certData.merkleRoot,
       created_at: new Date().toISOString()
     };
-    logCertificate(logData).catch(e => console.error('Supabase log error:', e));
+
+    // Log to Supabase and capture result
+    const supabaseResult = await logCertificate(logData);
+    console.log('📊 [/certify] Supabase logging result:', supabaseResult);
+
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    // Set response headers with Supabase status
+    const responseHeaders = {
+      'X-Supabase-Success': supabaseResult.success ? 'true' : 'false',
+      'X-Supabase-Details': supabaseResult.details || 'none',
+      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none'
+    };
+
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.html"`,
+        ...responseHeaders
+      });
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="CERTONE_${certData.certificateId}.pdf"`,
+        ...responseHeaders
+      });
+    }
+    
+    res.end(pdfBuffer);
 
   } catch (err) {
     console.error('[ERROR] PDF generation failed:', err);
@@ -432,37 +444,7 @@ app.post('/certify-text', async (req, res, next) => {
       }
     }
     
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
-    
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
-        'X-Certificate-ID': certificateId,
-        'X-File-Hash': fileHash,
-        'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-        'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-        'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-        'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-        res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-      'X-Certificate-ID': certificateId,
-      'X-File-Hash': fileHash,
-      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-    });
-      res.end(pdfBuffer);
-    }
-    
+    // Prepare data for logging to Supabase
     const logDataText = {
       certificate_id: certData.certificateId,
       user_name: certData.userName,
@@ -480,7 +462,44 @@ app.post('/certify-text', async (req, res, next) => {
       ots_url: certData.verificationLink,
       created_at: new Date().toISOString()
     };
-    logCertificate(logDataText).catch(e => console.error('Supabase log error:', e));
+
+    // Log to Supabase and capture result
+    const supabaseResult = await logCertificate(logDataText);
+    console.log('📊 [/certify-text] Supabase logging result:', supabaseResult);
+
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    // Prepare all response headers including Supabase status
+    const allHeaders = {
+      'X-Certificate-ID': certificateId,
+      'X-File-Hash': fileHash,
+      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
+      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
+      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
+      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false',
+      'X-Supabase-Success': supabaseResult.success ? 'true' : 'false',
+      'X-Supabase-Details': supabaseResult.details || 'none',
+      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none'
+    };
+
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
+        ...allHeaders
+      });
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
+        ...allHeaders
+      });
+    }
+    
+    res.end(pdfBuffer);
 
   } catch (err) {
     console.error('[ERROR] Text certification failed:', err);
@@ -541,37 +560,7 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       }
     }
     
-    // Check if the result is actually HTML (fallback method)
-    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
-    
-    if (isHtml) {
-      // Fallback method returned HTML
-      res.set({
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
-        'X-Certificate-ID': certificateId,
-        'X-File-Hash': fileHash,
-        'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-        'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-        'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-        'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-      });
-      res.end(pdfBuffer);
-    } else {
-      // Normal PDF response
-        res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
-      'X-Certificate-ID': certificateId,
-      'X-File-Hash': fileHash,
-      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
-      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
-      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
-      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false'
-    });
-      res.end(pdfBuffer);
-    }
-    
+    // Prepare data for logging to Supabase
     const logDataFile = {
       certificate_id: certData.certificateId,
       user_name: certData.userName,
@@ -589,7 +578,44 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       ots_url: certData.verificationLink,
       created_at: new Date().toISOString()
     };
-    logCertificate(logDataFile).catch(e => console.error('Supabase log error:', e));
+
+    // Log to Supabase and capture result
+    const supabaseResult = await logCertificate(logDataFile);
+    console.log('📊 [/certify-file] Supabase logging result:', supabaseResult);
+
+    // Check if the result is actually HTML (fallback method)
+    const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
+    
+    // Prepare all response headers including Supabase status
+    const allHeaders = {
+      'X-Certificate-ID': certificateId,
+      'X-File-Hash': fileHash,
+      'X-IPFS-Certificate-CID': ipfsResults?.certificate?.ipfsHash || 'none',
+      'X-IPFS-Metadata-CID': ipfsResults?.metadata?.ipfsHash || 'none',
+      'X-IPFS-Original-CID': ipfsResults?.originalFile?.ipfsHash || 'none',
+      'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false',
+      'X-Supabase-Success': supabaseResult.success ? 'true' : 'false',
+      'X-Supabase-Details': supabaseResult.details || 'none',
+      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none'
+    };
+
+    if (isHtml) {
+      // Fallback method returned HTML
+      res.set({
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.html"`,
+        ...allHeaders
+      });
+    } else {
+      // Normal PDF response
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="CERT_${certificateId}.pdf"`,
+        ...allHeaders
+      });
+    }
+    
+    res.end(pdfBuffer);
 
   } catch (err) {
     console.error('[ERROR] File certification failed:', err);

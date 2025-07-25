@@ -297,6 +297,12 @@
                     error: response.headers.get('X-Supabase-Error')
                 };
 
+                // Get Make webhook information from headers
+                const makeData = {
+                    success: response.headers.get('X-Make-Success') === 'true',
+                    details: response.headers.get('X-Make-Details')
+                };
+
                 resultDiv.innerHTML = `
 ✅ Certificate generated and downloaded!
 
@@ -314,6 +320,10 @@
 • Success: ${supabaseData.success ? '✅ Yes' : '❌ No'}
 • Details: ${supabaseData.details || 'none'}
 ${supabaseData.error !== 'none' ? `• Error: ${supabaseData.error}` : ''}
+
+📧 Make Email Webhook:
+• Success: ${makeData.success ? '✅ Yes' : '❌ No'}
+• Details: ${makeData.details || 'none'}
 
 ${ipfsData.certificateCid ? `📄 View Certificate: https://gateway.pinata.cloud/ipfs/${ipfsData.certificateCid}` : ''}
 ${ipfsData.metadataCid ? `📋 View Metadata: https://gateway.pinata.cloud/ipfs/${ipfsData.metadataCid}` : ''}

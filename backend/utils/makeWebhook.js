@@ -24,6 +24,37 @@ async function sendToMakeWebhook(certificateData, pdfBuffer) {
       };
     }
 
+    // Validate and fix webhook URL format
+    let validWebhookUrl = webhookUrl.trim();
+    
+    // Handle common Make webhook URL formats
+    if (validWebhookUrl.includes('@hook.') && !validWebhookUrl.startsWith('http')) {
+      // Convert format like "p1n28ve7pm8djlycvww159xs61fxwcsq@hook.us2.make.com" 
+      // to "https://hook.us2.make.com/p1n28ve7pm8djlycvww159xs61fxwcsq"
+      const parts = validWebhookUrl.split('@');
+      if (parts.length === 2) {
+        const [id, domain] = parts;
+        validWebhookUrl = `https://${domain}/${id}`;
+        console.log('🔧 [Make Webhook] Converted URL format to:', validWebhookUrl);
+      }
+    } else if (!validWebhookUrl.startsWith('http')) {
+      // Add https:// if missing
+      validWebhookUrl = `https://${validWebhookUrl}`;
+      console.log('🔧 [Make Webhook] Added https:// to URL:', validWebhookUrl);
+    }
+
+    // Basic URL validation
+    try {
+      new URL(validWebhookUrl);
+    } catch (urlError) {
+      console.error('❌ [Make Webhook] Invalid URL format:', validWebhookUrl);
+      return {
+        success: false,
+        details: `Invalid webhook URL format: ${webhookUrl}. Expected format: https://hook.us2.make.com/YOUR_WEBHOOK_ID`,
+        error: urlError
+      };
+    }
+
     if (!webhookEnabled) {
       console.log('⚠️ [Make Webhook] Disabled via environment variable');
       return {
@@ -97,7 +128,7 @@ async function sendToMakeWebhook(certificateData, pdfBuffer) {
     console.log('📤 [Make Webhook] Payload prepared, sending to webhook...');
 
     // Send to Make webhook
-    const response = await fetch(webhookUrl, {
+    const response = await fetch(validWebhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

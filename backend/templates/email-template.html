@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your CERT.ONE Certificate</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Helvetica, sans-serif;
+            background-color: #ffffff;
+            color: #333333;
+            line-height: 1.5;
+        }
+        .email-container {
+            max-width: 350px;
+            margin: 0 auto;
+            padding: 16px;
+            background-color: #ffffff;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: bold;
+            color: #333333;
+            margin: 0 0 8px 0;
+        }
+        .header .tagline {
+            font-size: 14px;
+            color: #666666;
+            margin: 0;
+        }
+        .greeting {
+            font-size: 15px;
+            color: #333333;
+            margin-bottom: 16px;
+        }
+        .body-text {
+            font-size: 13px;
+            color: #333333;
+            margin-bottom: 24px;
+        }
+        .certificate-section {
+            background-color: #ffffff;
+            border: 1px solid #cccccc;
+            border-radius: 5px;
+            padding: 12px;
+            margin-bottom: 24px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #333333;
+            margin: 0 0 16px 0;
+        }
+        .info-row {
+            margin-bottom: 12px;
+        }
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+        .info-label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #666666;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 13px;
+            color: #333333;
+            word-break: break-all;
+            font-family: Helvetica, sans-serif;
+        }
+        .buttons {
+            text-align: center;
+            margin: 24px 0;
+        }
+        .button {
+            display: inline-block;
+            height: 36px;
+            padding: 0 24px;
+            background-color: #000000;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: normal;
+            line-height: 36px;
+            margin: 8px 4px;
+            transition: all 0.2s ease;
+        }
+        .button:hover {
+            background-color: #fed001;
+            color: #000000;
+        }
+        .features-section {
+            background-color: #ffffff;
+            border: 1px solid #cccccc;
+            border-radius: 5px;
+            padding: 12px;
+            margin-bottom: 24px;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .feature-list li {
+            font-size: 13px;
+            color: #333333;
+            margin-bottom: 8px;
+            position: relative;
+            padding-left: 16px;
+        }
+        .feature-list li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #fed001;
+            font-weight: bold;
+        }
+        .feature-list li:last-child {
+            margin-bottom: 0;
+        }
+        .security-note {
+            background-color: #ffffff;
+            border: 1px solid #fed001;
+            border-radius: 5px;
+            padding: 12px;
+            margin: 24px 0;
+        }
+        .security-note .note-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #333333;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .security-note .note-text {
+            font-size: 13px;
+            color: #333333;
+        }
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #666666;
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid #cccccc;
+        }
+        .footer .brand-link {
+            color: #fed001;
+            text-decoration: none;
+        }
+        .footer .legal-link {
+            color: #333333;
+            text-decoration: none;
+        }
+        .status-message {
+            font-size: 12px;
+            font-style: italic;
+            color: #fed001;
+            margin: 8px 0;
+            text-align: center;
+        }
+        @media (max-width: 600px) {
+            .email-container {
+                padding: 12px;
+            }
+            .button {
+                display: block;
+                margin: 8px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>CERT.ONE</h1>
+            <p class="tagline">Blockchain Document Certification</p>
+        </div>
+
+        <!-- Main Content -->
+        <div class="greeting">
+            Hello {{user_name}},
+        </div>
+        
+        <div class="body-text">
+            Your document has been successfully certificated and timestamped on the Bitcoin blockchain. Your certificate is attached and ready for verification.
+        </div>
+
+        <!-- Certificate Information -->
+        <div class="certificate-section">
+            <div class="section-title">Certificate Details</div>
+            
+            <div class="info-row">
+                <div class="info-label">Certificate ID</div>
+                <div class="info-value">{{certificate_id}}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Document Title</div>
+                <div class="info-value">{{title}}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Original File</div>
+                <div class="info-value">{{file_name}}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">File Hash (SHA256)</div>
+                <div class="info-value">{{file_hash}}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Timestamp</div>
+                <div class="info-value">{{timestamp}}</div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Blockchain</div>
+                <div class="info-value">Bitcoin (OpenTimestamps)</div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="buttons">
+            <a href="{{ipfs_url}}" class="button">View Certificate</a>
+            <a href="{{verification_url}}" class="button">Verify on Blockchain</a>
+        </div>
+
+        <!-- Features Section -->
+        <div class="features-section">
+            <div class="section-title">Certificate Features</div>
+            <ul class="feature-list">
+                <li>Blockchain timestamped on Bitcoin network</li>
+                <li>IPFS distributed storage for permanence</li>
+                <li>SHA256 cryptographic hash security</li>
+                <li>Instant verification capability</li>
+                <li>Professional PDF certificate attached</li>
+            </ul>
+        </div>
+
+        <!-- Security Note -->
+        <div class="security-note">
+            <div class="note-title">Security Notice</div>
+            <div class="note-text">
+                Your certificate is cryptographically secured and tamper-proof. The attached PDF contains verification codes and links. Keep this email safe as proof of certification.
+            </div>
+        </div>
+
+        <div class="status-message">
+            Certificate successfully generated and delivered!
+        </div>
+
+        <div class="body-text">
+            If you need assistance with verification or have questions, contact our support team.
+        </div>
+        
+        <div class="body-text">
+            Thank you for using CERT.ONE.
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>CERT.ONE</strong> - Blockchain Document Certification</p>
+            <p>Powered by Bitcoin & IPFS | <a href="https://cert.one" class="brand-link">cert.one</a></p>
+            <p>© 2025 <a href="https://johnjohnfm.com" class="brand-link">JOHNJOHNFM, LLC</a> — All rights reserved.</p>
+            <p>This email was sent because you requested certificate generation.</p>
+        </div>
+    </div>
+</body>
+</html>

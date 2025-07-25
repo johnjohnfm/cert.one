@@ -290,6 +290,13 @@
 
                 // Display results
                 resultDiv.className = `result ${ipfsData.success ? 'success' : 'error'}`;
+                // Get Supabase information from headers
+                const supabaseData = {
+                    success: response.headers.get('X-Supabase-Success') === 'true',
+                    details: response.headers.get('X-Supabase-Details'),
+                    error: response.headers.get('X-Supabase-Error')
+                };
+
                 resultDiv.innerHTML = `
 ✅ Certificate generated and downloaded!
 
@@ -302,6 +309,11 @@
 • Certificate CID: ${ipfsData.certificateCid || 'Not uploaded'}
 • Metadata CID: ${ipfsData.metadataCid || 'Not uploaded'}
 • Original File CID: ${ipfsData.originalCid || 'Not uploaded'}
+
+📊 Supabase Database Logging:
+• Success: ${supabaseData.success ? '✅ Yes' : '❌ No'}
+• Details: ${supabaseData.details || 'none'}
+${supabaseData.error !== 'none' ? `• Error: ${supabaseData.error}` : ''}
 
 ${ipfsData.certificateCid ? `📄 View Certificate: https://gateway.pinata.cloud/ipfs/${ipfsData.certificateCid}` : ''}
 ${ipfsData.metadataCid ? `📋 View Metadata: https://gateway.pinata.cloud/ipfs/${ipfsData.metadataCid}` : ''}

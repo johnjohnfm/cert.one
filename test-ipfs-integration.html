@@ -394,6 +394,20 @@ ${ipfsData.metadataCid ? `📋 View Metadata: https://gateway.pinata.cloud/ipfs/
 
                 // Display results
                 resultDiv.className = `result ${ipfsData.success ? 'success' : 'error'}`;
+                
+                // Get Supabase information from headers
+                const supabaseData = {
+                    success: response.headers.get('X-Supabase-Success') === 'true',
+                    details: response.headers.get('X-Supabase-Details'),
+                    error: response.headers.get('X-Supabase-Error')
+                };
+
+                // Get Make webhook information from headers
+                const makeData = {
+                    success: response.headers.get('X-Make-Success') === 'true',
+                    details: response.headers.get('X-Make-Details')
+                };
+
                 resultDiv.innerHTML = `
 ✅ File certificate generated and downloaded!
 
@@ -407,6 +421,15 @@ ${ipfsData.metadataCid ? `📋 View Metadata: https://gateway.pinata.cloud/ipfs/
 • Certificate CID: ${ipfsData.certificateCid || 'Not uploaded'}
 • Metadata CID: ${ipfsData.metadataCid || 'Not uploaded'}
 • Original File CID: ${ipfsData.originalCid || 'Not uploaded'}
+
+📊 Supabase Database Logging:
+• Success: ${supabaseData.success ? '✅ Yes' : '❌ No'}
+• Details: ${supabaseData.details || 'none'}
+${supabaseData.error !== 'none' ? `• Error: ${supabaseData.error}` : ''}
+
+📧 Make Email Webhook:
+• Success: ${makeData.success ? '✅ Yes' : '❌ No'}
+• Details: ${makeData.details || 'none'}
 
 ${ipfsData.certificateCid ? `📄 View Certificate: https://gateway.pinata.cloud/ipfs/${ipfsData.certificateCid}` : ''}
 ${ipfsData.metadataCid ? `📋 View Metadata: https://gateway.pinata.cloud/ipfs/${ipfsData.metadataCid}` : ''}

@@ -11,6 +11,7 @@ const { hashText, hashFile, generateCertificateId } = require('./utils/hasher');
 const { createTimestampAPI } = require('./utils/opentimestamps');
 const { uploadToIPFS, uploadCertificateToIPFS, uploadMetadataToIPFS, createCertificateMetadata, uploadCompleteCertificatePackage } = require('./utils/ipfs');
 const { logCertificate } = require('./utils/supabaseLogger');
+const { sendToMakeWebhookSafe } = require('./utils/makeWebhook');
 
 const app = express();
 
@@ -358,14 +359,20 @@ app.post('/certify', async (req, res, next) => {
     const supabaseResult = await logCertificate(logData);
     console.log('📊 [/certify] Supabase logging result:', supabaseResult);
 
+    // Send to Make webhook (non-blocking)
+    const makeResult = await sendToMakeWebhookSafe(logData, pdfBuffer);
+    console.log('📧 [/certify] Make webhook result:', makeResult);
+
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
     
-    // Set response headers with Supabase status
+    // Set response headers with Supabase and Make status
     const responseHeaders = {
       'X-Supabase-Success': supabaseResult.success ? 'true' : 'false',
       'X-Supabase-Details': supabaseResult.details || 'none',
-      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none'
+      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none',
+      'X-Make-Success': makeResult.success ? 'true' : 'false',
+      'X-Make-Details': makeResult.details || 'none'
     };
 
     if (isHtml) {
@@ -467,10 +474,14 @@ app.post('/certify-text', async (req, res, next) => {
     const supabaseResult = await logCertificate(logDataText);
     console.log('📊 [/certify-text] Supabase logging result:', supabaseResult);
 
+    // Send to Make webhook (non-blocking)
+    const makeResult = await sendToMakeWebhookSafe(logDataText, pdfBuffer);
+    console.log('📧 [/certify-text] Make webhook result:', makeResult);
+
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
     
-    // Prepare all response headers including Supabase status
+    // Prepare all response headers including Supabase and Make status
     const allHeaders = {
       'X-Certificate-ID': certificateId,
       'X-File-Hash': fileHash,
@@ -480,7 +491,9 @@ app.post('/certify-text', async (req, res, next) => {
       'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false',
       'X-Supabase-Success': supabaseResult.success ? 'true' : 'false',
       'X-Supabase-Details': supabaseResult.details || 'none',
-      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none'
+      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none',
+      'X-Make-Success': makeResult.success ? 'true' : 'false',
+      'X-Make-Details': makeResult.details || 'none'
     };
 
     if (isHtml) {
@@ -583,10 +596,14 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
     const supabaseResult = await logCertificate(logDataFile);
     console.log('📊 [/certify-file] Supabase logging result:', supabaseResult);
 
+    // Send to Make webhook (non-blocking)
+    const makeResult = await sendToMakeWebhookSafe(logDataFile, pdfBuffer);
+    console.log('📧 [/certify-file] Make webhook result:', makeResult);
+
     // Check if the result is actually HTML (fallback method)
     const isHtml = pdfBuffer.toString('utf8').trim().startsWith('<!DOCTYPE html>');
     
-    // Prepare all response headers including Supabase status
+    // Prepare all response headers including Supabase and Make status
     const allHeaders = {
       'X-Certificate-ID': certificateId,
       'X-File-Hash': fileHash,
@@ -596,7 +613,9 @@ app.post('/certify-file', upload.single('file'), async (req, res, next) => {
       'X-IPFS-Success': ipfsResults?.success ? 'true' : 'false',
       'X-Supabase-Success': supabaseResult.success ? 'true' : 'false',
       'X-Supabase-Details': supabaseResult.details || 'none',
-      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none'
+      'X-Supabase-Error': supabaseResult.error ? supabaseResult.error.message : 'none',
+      'X-Make-Success': makeResult.success ? 'true' : 'false',
+      'X-Make-Details': makeResult.details || 'none'
     };
 
     if (isHtml) {
